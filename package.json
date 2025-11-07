@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "chmod +x vercel-build.sh && ./vercel-build.sh",
     "preview": "vite preview",
     "start": "node backend/server.js"
   },
