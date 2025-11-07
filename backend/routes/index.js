@@ -6,11 +6,23 @@ const router = express.Router();
 
 router.use(express.json());
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_KEY;
-if (!SUPABASE_URL || !SUPABASE_KEY) console.warn('[ROUTES] SUPABASE_URL or SUPABASE_KEY not set');
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_KEY;
+if (!SUPABASE_URL || !SUPABASE_KEY) {
+    console.error('[ROUTES] Supabase Configuration Missing:', {
+        SUPABASE_URL: !!process.env.SUPABASE_URL,
+        VITE_SUPABASE_URL: !!process.env.VITE_SUPABASE_URL,
+        SUPABASE_KEY: !!process.env.SUPABASE_KEY,
+        VITE_SUPABASE_ANON_KEY: !!process.env.VITE_SUPABASE_ANON_KEY
+    });
+}
 const REST_BASE = SUPABASE_URL ? SUPABASE_URL.replace(/\/$/, '') + '/rest/v1' : null;
-const SB_HEADERS = SUPABASE_KEY ? { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' } : {};
+const SB_HEADERS = SUPABASE_KEY ? { 
+    apikey: SUPABASE_KEY, 
+    Authorization: `Bearer ${SUPABASE_KEY}`, 
+    'Content-Type': 'application/json',
+    'Prefer': 'return=minimal'
+} : {};
 
 const { initPool } = require('../db');
 let mysqlPoolPromise = null;
@@ -147,6 +159,50 @@ router.get('/orders/:id', async (req, res) => {
   } catch (err) {
     console.error('[ORDERS/:id] axios error', err && err.response ? { status: err.response.status, data: err.response.data } : err.message)
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Health check endpoint to verify Supabase connectivity
+router.get('/health', async (req, res) => {
+  try {
+    if (!REST_BASE) {
+      return res.status(500).json({ 
+        status: 'error',
+        message: 'Supabase not configured',
+        config: {
+          hasSupabaseUrl: !!SUPABASE_URL,
+          hasSupabaseKey: !!SUPABASE_KEY,
+          hasRestBase: !!REST_BASE
+        }
+      });
+    }
+
+    // Try a simple query to verify database connection
+    const url = `${REST_BASE}/users?select=count`;
+    const resp = await axios.get(url, { headers: SB_HEADERS });
+    
+    res.json({ 
+      status: 'ok',
+      database: 'connected',
+      timestamp: new Date().toISOString(),
+      config: {
+        hasSupabaseUrl: !!SUPABASE_URL,
+        hasSupabaseKey: !!SUPABASE_KEY,
+        hasRestBase: !!REST_BASE
+      }
+    });
+  } catch (err) {
+    console.error('[HEALTH] Supabase connection error:', err.message);
+    res.status(500).json({ 
+      status: 'error',
+      message: err.message,
+      details: err.response?.data || null,
+      config: {
+        hasSupabaseUrl: !!SUPABASE_URL,
+        hasSupabaseKey: !!SUPABASE_KEY,
+        hasRestBase: !!REST_BASE
+      }
+    });
   }
 });
 
