@@ -25,4 +25,4 @@ if [ $missing_vars -eq 1 ]; then
 fi
 
 echo "✓ All required environment variables are set"
-npm run build
+vite build
