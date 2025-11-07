@@ -1,0 +1,91 @@
+Server running at http://localhost:3000
+[REGISTER] incoming: {
+  name: 'E2E Test',
+  email: 'e2e+1761065275019@example.com',
+  phone: undefined
+}
+[REGISTER] supabase response: {
+  data: null,
+  error: {
+    message: 'TypeError: fetch failed',
+    details: 'TypeError: fetch failed\n' +
+      '    at node:internal/deps/undici/undici:13502:13\n' +
+      '    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n' +
+      '    at async C:\\Users\\Gary\\Downloads\\vue\\chiangho-tracking-order\\backend\\routes\\index.js:21:29',
+    hint: '',
+    code: ''
+  }
+}
+[LOGIN] incoming: { email: 'e2e+1761065275019@example.com' }
+[LOGIN] supabase response: {
+  data: null,
+  error: {
+    message: 'TypeError: fetch failed',
+    details: 'TypeError: fetch failed\n' +
+      '    at node:internal/deps/undici/undici:13502:13\n' +
+      '    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n' +
+      '    at async C:\\Users\\Gary\\Downloads\\vue\\chiangho-tracking-order\\backend\\routes\\index.js:48:29',
+    hint: '',
+    code: ''
+  }
+}
+[REGISTER] incoming: {
+  name: 'E2E Test',
+  email: 'e2e+1761065355437@example.com',
+  phone: undefined
+}
+[REGISTER] supabase response: {
+  data: null,
+  error: {
+    message: 'TypeError: fetch failed',
+    details: 'TypeError: fetch failed\n' +
+      '    at node:internal/deps/undici/undici:13502:13\n' +
+      '    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n' +
+      '    at async C:\\Users\\Gary\\Downloads\\vue\\chiangho-tracking-order\\backend\\routes\\index.js:21:29',
+    hint: '',
+    code: ''
+  }
+}
+[LOGIN] incoming: { email: 'e2e+1761065355437@example.com' }
+[LOGIN] supabase response: {
+  data: null,
+  error: {
+    message: 'TypeError: fetch failed',
+    details: 'TypeError: fetch failed\n' +
+      '    at node:internal/deps/undici/undici:13502:13\n' +
+      '    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n' +
+      '    at async C:\\Users\\Gary\\Downloads\\vue\\chiangho-tracking-order\\backend\\routes\\index.js:48:29',
+    hint: '',
+    code: ''
+  }
+}
+[REGISTER] incoming: { name: 'hidden', email: 'hiddenmood.app@gmail.com', phone: undefined }
+[REGISTER] supabase response: {
+  data: null,
+  error: {
+    message: 'TypeError: fetch failed',
+    details: 'TypeError: fetch failed\n' +
+      '    at node:internal/deps/undici/undici:13502:13\n' +
+      '    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n' +
+      '    at async C:\\Users\\Gary\\Downloads\\vue\\chiangho-tracking-order\\backend\\routes\\index.js:21:29',
+    hint: '',
+    code: ''
+  }
+}
+[REGISTER] incoming: {
+  name: 'hidden1',
+  email: 'hiddenmood1.app@gmail.com',
+  phone: undefined
+}
+[REGISTER] supabase response: {
+  data: null,
+  error: {
+    message: 'TypeError: fetch failed',
+    details: 'TypeError: fetch failed\n' +
+      '    at node:internal/deps/undici/undici:13502:13\n' +
+      '    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n' +
+      '    at async C:\\Users\\Gary\\Downloads\\vue\\chiangho-tracking-order\\backend\\routes\\index.js:21:29',
+    hint: '',
+    code: ''
+  }
+}
