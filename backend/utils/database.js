@@ -1,4 +1,4 @@
-const { supabaseQuery } = require('./utils/supabase');
+const { supabaseQuery } = require('./supabase');
 
 // Generic error handler
 const handleDatabaseError = (error, operation) => {
