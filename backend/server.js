@@ -44,22 +44,26 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/index.html'));
 });
 
-// Start the server with optional database initialization
-// If SKIP_DB_CHECK is set to 'true' we will start the server without exiting
-// when a database connection can't be established. This is useful for local
-// development when you don't have Supabase/MySQL configured.
-if (process.env.SKIP_DB_CHECK === 'true') {
-    console.warn('⚠️ SKIP_DB_CHECK=true — starting server without database initialization');
-    app.listen(port, () => {
-        console.log(`✓ Server running at http://localhost:${port}`);
-    });
-} else {
-    initializeDatabase().then(() => {
+// Export the app so it can be used by serverless handlers.
+module.exports = app;
+
+// If this file is executed directly, run the database initialization and start
+// the HTTP server. When imported (for serverless), we only export the app.
+if (require.main === module) {
+    // Start the server with optional database initialization
+    if (process.env.SKIP_DB_CHECK === 'true') {
+        console.warn('⚠️ SKIP_DB_CHECK=true — starting server without database initialization');
         app.listen(port, () => {
             console.log(`✓ Server running at http://localhost:${port}`);
         });
-    }).catch(error => {
-        console.error('Failed to start server:', error);
-        process.exit(1);
-    });
+    } else {
+        initializeDatabase().then(() => {
+            app.listen(port, () => {
+                console.log(`✓ Server running at http://localhost:${port}`);
+            });
+        }).catch(error => {
+            console.error('Failed to start server:', error);
+            process.exit(1);
+        });
+    }
 }
