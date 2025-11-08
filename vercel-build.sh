@@ -33,4 +33,16 @@ if [ "${VITE_API_URL}" = "http://localhost:3000" ] || [ "${VITE_API_URL}" = "htt
   unset VITE_API_URL
 fi
 
+# Also guard against a committed .env file containing VITE_API_URL pointing to localhost
+# Vite loads `.env` files at build time, so remove that line if present to avoid baking it in.
+if [ -f .env ]; then
+  if grep -q "^VITE_API_URL=.*localhost" .env; then
+    echo "⚠️ .env contains VITE_API_URL pointing to localhost — removing that line for build"
+    # keep a backup in case needed
+    cp .env .env.vercel_build.bak || true
+    # delete the VITE_API_URL line(s)
+    sed -i '/^VITE_API_URL=/d' .env || true
+  fi
+fi
+
 vite build
