@@ -1,6 +1,7 @@
 const express = require('express');
 const axios = require('axios');
 const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 
 const router = express.Router();
 
@@ -8,6 +9,7 @@ router.use(express.json());
 
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_KEY;
+const JWT_SECRET = process.env.JWT_SECRET || process.env.SUPABASE_JWT_SECRET || 'dev_jwt_secret';
 if (!SUPABASE_URL || !SUPABASE_KEY) {
     console.error('[ROUTES] Supabase Configuration Missing:', {
         SUPABASE_URL: !!process.env.SUPABASE_URL,
@@ -39,16 +41,31 @@ router.post('/register', async (req, res) => {
 
     if (!REST_BASE) return res.status(500).json({ error: 'Supabase not configured' })
     try {
+      // Check for existing email
+      const checkUrl = `${REST_BASE}/users?select=*&email=eq.${encodeURIComponent(email)}`;
+      const checkResp = await axios.get(checkUrl, { headers: SB_HEADERS });
+      const existing = Array.isArray(checkResp.data) && checkResp.data.length ? checkResp.data[0] : null;
+      if (existing) {
+        return res.status(409).json({ error: 'Email already registered' });
+      }
+
       const url = `${REST_BASE}/users`;
       const body = [{ name, email, password: hashed, phone }];
       const resp = await axios.post(url, body, { headers: { ...SB_HEADERS, Prefer: 'return=representation' } });
       const created = Array.isArray(resp.data) && resp.data.length ? resp.data[0] : null;
       if (!created) return res.status(500).json({ error: 'Failed to create user' });
       if (created.password) delete created.password;
-      res.status(201).json(created);
+
+      // Sign a JWT for the created user
+      const payload = { user_id: created.user_id || created.id || created.userId || null, email: created.email, role: created.role || 'customer' };
+      const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+
+      res.status(201).json({ user: created, token });
     } catch (err) {
       console.error('[REGISTER] axios error', err && err.response ? { status: err.response.status, data: err.response.data } : err.message)
       const msg = err.response && err.response.data ? err.response.data : err.message;
+      // If Supabase returned a duplicate constraint message, normalize it
+      if (err.response && err.response.status === 409) return res.status(409).json({ error: 'Email already registered' });
       res.status(400).json({ error: msg });
     }
   } catch (err) {
@@ -76,7 +93,10 @@ router.post('/login', async (req, res) => {
       const match = await bcrypt.compare(password, data.password || '');
       if (!match) return res.status(401).json({ error: 'Invalid credentials' });
       delete data.password;
-      res.json({ user: data });
+      // Sign a JWT and return with user
+      const payload = { user_id: data.user_id || data.id || data.userId || null, email: data.email, role: data.role || 'customer' };
+      const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+      res.json({ user: data, token });
     } catch (err) {
       console.error('[LOGIN] axios error', err && err.response ? { status: err.response.status, data: err.response.data } : err.message)
       res.status(500).json({ error: err.message });
