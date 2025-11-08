@@ -340,10 +340,27 @@ export default {
       if (!path) return null
       if (publicUrlCache[path]) return publicUrlCache[path]
       try {
-        // Use local image URL
-        const url = `${import.meta.env.VITE_API_URL}${path}`
-        publicUrlCache[path] = url
-        return url
+        // Prefer using Supabase Storage public URL when client is available
+        if (supabase && bucketName) {
+          try {
+            const { data, error } = await supabase.storage.from(bucketName).getPublicUrl(path)
+            if (!error && data && data.publicUrl) {
+              publicUrlCache[path] = data.publicUrl
+              return data.publicUrl
+            }
+          } catch (e) {
+            // continue to fallback below
+          }
+        }
+
+        // Fallback to building a URL from VITE_API_URL (if provided)
+        if (import.meta.env.VITE_API_URL) {
+          const url = `${import.meta.env.VITE_API_URL.replace(/\/$/, '')}${path}`
+          publicUrlCache[path] = url
+          return url
+        }
+
+        return null
       } catch (err) {
         console.warn('[getPublicPreview] fallback for', path, err)
         return null
@@ -385,8 +402,21 @@ export default {
           return
         }
         const path = pathOrUrl
-        // Use local URL
-        const pubUrl = `${import.meta.env.VITE_API_URL}${path}`
+        // Prefer Supabase public URL if possible
+        if (supabase && bucketName) {
+          try {
+            const { data, error } = await supabase.storage.from(bucketName).getPublicUrl(path)
+            if (!error && data && data.publicUrl) {
+              window.open(data.publicUrl, '_blank')
+              return
+            }
+          } catch (e) {
+            // ignore and fallback below
+          }
+        }
+
+        // Fallback to VITE_API_URL-based URL
+        const pubUrl = `${(import.meta.env.VITE_API_URL || '').replace(/\/$/, '')}${path}`
         window.open(pubUrl, '_blank')
       } catch (err) {
         console.error('[downloadSablon] error', err)
