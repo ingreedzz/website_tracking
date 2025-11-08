@@ -16,12 +16,6 @@
       "destination": "https://website-tracking.onrender.com/api/$1"
     }
   ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "/dist/$1"
-    }
-  ],
   "env": {
     "SUPABASE_URL": "${SUPABASE_URL}",
     "SUPABASE_KEY": "${SUPABASE_KEY}",
