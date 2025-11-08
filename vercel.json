@@ -14,11 +14,13 @@
       }
     }
   ],
-  "routes": [
+  "rewrites": [
     {
-      "src": "/api/(.*)",
-      "dest": "backend/api/index.js"
-    },
+      "source": "/api/(.*)",
+      "destination": "https://website-tracking.onrender.com/api/$1"
+    }
+  ],
+  "routes": [
     {
       "src": "/(.*)",
       "dest": "/dist/$1"
