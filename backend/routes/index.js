@@ -24,11 +24,7 @@ const SB_HEADERS = SUPABASE_KEY ? {
     'Prefer': 'return=minimal'
 } : {};
 
-const { initPool } = require('../db');
-let mysqlPoolPromise = null;
-if (process.env.DB_NAME) {
-  mysqlPoolPromise = initPool();
-}
+// MySQL fallback removed — use Supabase only
 
 router.post('/register', async (req, res) => {
   try {
@@ -39,21 +35,7 @@ router.post('/register', async (req, res) => {
 
     const hashed = await bcrypt.hash(password, 10);
 
-    if (mysqlPoolPromise) {
-      try {
-        const pool = await mysqlPoolPromise;
-        if (pool) {
-          const userId = require('crypto').randomUUID();
-          const sql = 'INSERT INTO users (user_id, name, email, password, phone) VALUES (?, ?, ?, ?, ?)';
-          const conn = await pool.getConnection();
-          await conn.execute(sql, [userId, name, email, hashed, phone || null]);
-          conn.release();
-          return res.status(201).json({ user_id: userId, name, email, phone });
-        }
-      } catch (err) {
-        console.error('[REGISTER][MYSQL] error', err.message || err);
-      }
-    }
+    // Using Supabase exclusively (MySQL fallback removed)
 
     if (!REST_BASE) return res.status(500).json({ error: 'Supabase not configured' })
     try {
@@ -81,25 +63,7 @@ router.post('/login', async (req, res) => {
 
     console.log('[LOGIN] incoming:', { email })
     
-    if (mysqlPoolPromise) {
-      try {
-        const pool = await mysqlPoolPromise;
-        if (pool) {
-          const sql = 'SELECT user_id, name, email, password, phone FROM users WHERE email = ? LIMIT 1';
-          const conn = await pool.getConnection();
-          const [rows] = await conn.execute(sql, [email]);
-          conn.release();
-          const data = Array.isArray(rows) && rows.length ? rows[0] : null;
-          if (!data) return res.status(401).json({ error: 'Invalid credentials' });
-          const match = await bcrypt.compare(password, data.password || '');
-          if (!match) return res.status(401).json({ error: 'Invalid credentials' });
-          delete data.password;
-          return res.json({ user: data });
-        }
-      } catch (err) {
-        console.error('[LOGIN][MYSQL] error', err.message || err);
-      }
-    }
+    // Using Supabase exclusively (MySQL fallback removed)
 
     if (!REST_BASE) return res.status(500).json({ error: 'Supabase not configured' })
     try {
