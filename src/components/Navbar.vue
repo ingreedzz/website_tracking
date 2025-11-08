@@ -5,17 +5,46 @@
       <nav class="flex items-center space-x-2">
         <router-link to="/" class="px-3 py-2 rounded hover:bg-white/10">Home</router-link>
         <router-link to="/dashboard" class="px-3 py-2 rounded hover:bg-white/10">Dashboard</router-link>
-        <router-link to="/register" class="px-3 py-2 rounded hover:bg-white/10">Register</router-link>
-        <router-link to="/login" class="px-3 py-2 rounded hover:bg-white/10">Login</router-link>
+        <router-link v-if="loggedIn" to="/payment" class="px-3 py-2 rounded hover:bg-white/10">Payment</router-link>
+        <router-link v-if="!loggedIn" to="/register" class="px-3 py-2 rounded hover:bg-white/10">Register</router-link>
+        <router-link v-if="!loggedIn" to="/login" class="px-3 py-2 rounded hover:bg-white/10">Login</router-link>
+
+        <div v-if="loggedIn" class="flex items-center space-x-2">
+          <span class="text-sm opacity-90">{{ userEmail }}</span>
+          <button @click="doLogout" class="px-3 py-2 bg-red-500 rounded">Logout</button>
+        </div>
       </nav>
     </div>
   </header>
 </template>
 
-<script>
-export default {
-  name: 'Navbar'
+<script setup>
+import { ref, onMounted } from 'vue'
+import { getCurrentUser, clearToken } from '../lib/auth'
+
+const loggedIn = ref(false)
+const userEmail = ref('')
+
+function refreshUser() {
+  const u = getCurrentUser()
+    if (u) {
+    loggedIn.value = true
+    userEmail.value = u.email || u.sub || u.users_id || u.user_id || ''
+  } else {
+    loggedIn.value = false
+    userEmail.value = ''
+  }
 }
+
+function doLogout() {
+  clearToken()
+  refreshUser()
+  window.location.href = '/'
+}
+
+onMounted(() => {
+  refreshUser()
+})
 </script>
 
 <style scoped>

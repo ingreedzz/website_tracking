@@ -30,26 +30,16 @@ export default {
   methods: {
     async register() {
       try {
-        const resp = await fetch('/api/register', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: this.form.name, email: this.form.email, password: this.form.password })
+        const apiBase = import.meta.env.VITE_API_URL || ''
+        const res = await fetch((apiBase.replace(/\/$/, '') || '') + '/api/register', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(this.form)
         })
-        if (!resp.ok) {
-          let eb = null
-          try { eb = await resp.json() } catch (e) {}
-          throw new Error((eb && eb.error) ? eb.error : 'Registration failed')
-        }
-        const json = await resp.json()
-        // Backend returns { user, token }
-        const token = json.token
-        const { setToken } = await import('../lib/auth')
-        if (token) setToken(token)
-        alert('Registered successfully')
-        this.$router.push({ name: 'Home' })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || 'Register failed')
+        alert('Registered: ' + (data.email || ''))
       } catch (err) {
-        console.error('[register] error', err)
-        alert(err.message || String(err))
+        alert(err.message)
       }
     }
   }

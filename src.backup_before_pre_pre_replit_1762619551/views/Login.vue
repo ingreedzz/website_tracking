@@ -20,7 +20,6 @@
 
 <script>
 import { ref } from 'vue'
-import { setToken, decodeToken } from '../lib/auth'
 export default {
   name: 'Login',
   setup() {
@@ -29,29 +28,16 @@ export default {
 
     async function login() {
       try {
-        const resp = await fetch('/api/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+        const apiBase = import.meta.env.VITE_API_URL || ''
+        const res = await fetch((apiBase.replace(/\/$/, '') || '') + '/api/login', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: email.value, password: password.value })
         })
-        if (!resp.ok) {
-          let eb = null
-          try { eb = await resp.json() } catch (e) {}
-          throw new Error((eb && eb.error) ? eb.error : 'Login failed')
-        }
-  const json = await resp.json()
-  // Backend returns { user, token }
-  const token = json.token
-  if (token) setToken(token)
-  else throw new Error('No token returned')
-
-  const payload = decodeToken(token)
-  const emailStr = (json.user && json.user.email) || (payload && payload.email) || ''
-  const role = (payload && (payload.role || (payload.is_admin ? 'admin' : null))) || (json.user && json.user.role) || 'customer'
-  alert('Logged in: ' + (emailStr || '') + ' (role: ' + role + ')')
-  window.location.href = '/dashboard'
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || 'Login failed')
+        alert('Logged in: ' + (data.user?.email || ''))
       } catch (err) {
-        alert(err.message || String(err))
+        alert(err.message)
       }
     }
 
