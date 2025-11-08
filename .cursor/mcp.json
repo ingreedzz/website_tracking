@@ -6,11 +6,10 @@
         "-y",
         "@supabase/mcp-server-supabase@latest",
         "--access-token",
-        "sbp_d1269161671e5bcd0865c3f3f8bd175a5ef2779d",
-        "--port",
-        "3001"
+        "$SUPABASE_MCP_TOKEN",
+        "$SUPABASE_MCP_EXTRA_ARGS"
       ],
-      "notes": "Replace <SUPABASE_PERSONAL_ACCESS_TOKEN> with a Supabase personal access token. This file is a convenience example for use with VS Code MCP or starting the server from a terminal."
+      "notes": "Do NOT commit real tokens. Set SUPABASE_MCP_TOKEN in your Codespace and optionally SUPABASE_MCP_EXTRA_ARGS='--port 34211' before starting. Example: export SUPABASE_MCP_TOKEN=\"<token>\"; export SUPABASE_MCP_EXTRA_ARGS='--port 34211'"
     }
   }
 }
