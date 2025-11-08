@@ -1,53 +1,18 @@
-const mysql = require('mysql2/promise');
-require('dotenv').config();
-const fs = require('fs');
+import postgres from 'postgres';
+import 'dotenv/config';
 
-const DB_HOST = process.env.DB_HOST || '127.0.0.1';
-const DB_PORT = process.env.DB_PORT || 3306;
-const DB_USER = process.env.DB_USER || 'root';
-const DB_PASS = process.env.DB_PASS || '';
-const DB_NAME = process.env.DB_NAME || '';
+const connectionString = process.env.DATABASE_URL || process.env.SUPABASE_DATABASE_URL;
 
-let pool = null;
+// create or reuse a global client (helps in serverless / hot-reload environments)
+const globalKey = '__PG_CLIENT__';
 
-async function initPool() {
-  if (!DB_NAME) return null;
-  if (pool) return pool;
-  
-  try {
-    pool = mysql.createPool({
-      host: DB_HOST,
-      port: DB_PORT,
-      user: DB_USER,
-      password: DB_PASS,
-      database: DB_NAME,
-      waitForConnections: true,
-      connectionLimit: 10,
-      queueLimit: 0,
-    });
+const sql = globalThis[globalKey] ?? postgres(connectionString, {
+  ssl: { rejectUnauthorized: false }, // safe for many hosted DBs like Supabase
+  max: 5,             // max connections in pool
+  idle_timeout: 60,   // secs before idle connection closes
+  connect_timeout: 10 // seconds
+});
 
-    const createUsersSql = `
-      CREATE TABLE IF NOT EXISTS users (
-        user_id VARCHAR(36) PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        email VARCHAR(255) NOT NULL UNIQUE,
-        password VARCHAR(255) NOT NULL,
-        phone VARCHAR(50),
-        role VARCHAR(50) DEFAULT 'user',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-    `;
-    
-    const conn = await pool.getConnection();
-    await conn.query(createUsersSql);
-    conn.release();
-    console.log('[DB] Connected to MySQL and ensured users table exists');
-    return pool;
-  } catch (err) {
-    console.error('[DB] MySQL connection failed, will use Supabase instead:', err.message);
-    pool = null;
-    return null;
-  }
-}
+if (!globalThis[globalKey]) globalThis[globalKey] = sql;
 
-module.exports = { initPool };
+export default sql;
