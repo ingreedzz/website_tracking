@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: website-tracking-backend
+    env: node
+    plan: free
+    branch: main
+    buildCommand: npm ci
+    startCommand: npm run start
+    autoDeploy: true
+    healthCheckPath: /api/health
+    envVars:
+      - key: SUPABASE_URL
+        fromSecret: SUPABASE_URL
+      - key: SUPABASE_KEY
+        fromSecret: SUPABASE_KEY
+      - key: JWT_SECRET
+        fromSecret: JWT_SECRET
