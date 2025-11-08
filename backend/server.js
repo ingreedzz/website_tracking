@@ -32,6 +32,12 @@ async function initializeDatabase() {
 app.use(cors());
 app.use(express.json());
 
+// Simple request logger to help debugging in Vercel function logs
+app.use((req, res, next) => {
+    console.log(`[HTTP] ${req.method} ${req.originalUrl}`);
+    next();
+});
+
 // API routes
 const apiRoutes = require('./routes/index');
 app.use('/api', apiRoutes);
