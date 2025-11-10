@@ -127,3 +127,15 @@ Summary of work completed in this session:
 
 *Last Updated: 2025-11-10T16:55:00Z*  
 *Generated/Updated by AI agent working on the repo — follow the AI Agent Workflow in `AGENTS.md` before commits.*
+
+---
+
+### November 10, 2025 - Merge update
+
+- Merged branch `copilot/test-authentication-new-order` into `copilot/remove-user-id-field` and resolved conflicts in:
+  - `backend/routes/index.js` (kept middleware-based auth + enhanced debug logs)
+  - `src/views/Dashboard.vue` (kept detailed frontend logging and switched to `apiPostFormData` helper)
+  - `dist/index.html` (kept current built asset references)
+- Created backup branch `backup/copilot-remove-user-id-field-0b89b90` before merge.
+
+*Next: verify end-to-end flow locally and in Render staging; then remove backup branch if everything is OK.*
