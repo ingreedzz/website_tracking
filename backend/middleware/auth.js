@@ -7,7 +7,8 @@ const JWT_SECRET = process.env.JWT_SECRET || process.env.SUPABASE_JWT_SECRET || 
 function verifyToken(req, res, next) {
   try {
     const auth = req.headers.authorization || '';
-    const match = auth.match(/^Bearer\s+(.*)$/i);
+    // Fixed regex to prevent ReDoS - only match single space after Bearer
+    const match = auth.match(/^Bearer\s(.+)$/i);
     
     if (!match) {
       return res.status(401).json({ error: 'Missing or invalid Authorization header' });
@@ -68,7 +69,8 @@ function requireAdmin(req, res, next) {
 function optionalAuth(req, res, next) {
   try {
     const auth = req.headers.authorization || '';
-    const match = auth.match(/^Bearer\s+(.*)$/i);
+    // Fixed regex to prevent ReDoS - only match single space after Bearer
+    const match = auth.match(/^Bearer\s(.+)$/i);
     
     if (!match) {
       return next();
