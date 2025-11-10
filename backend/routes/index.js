@@ -63,7 +63,8 @@ router.post('/register', async (req, res) => {
       if (created.password) delete created.password;
 
       // Sign a JWT for the created user
-      const payload = { user_id: created.user_id || created.id || created.userId || null, email: created.email, role: created.role || 'customer' };
+  // include possible PK names (users_id, user_id, id) to ensure token contains an identifier
+  const payload = { user_id: created.users_id || created.user_id || created.id || created.userId || null, users_id: created.users_id || created.user_id || created.id || created.userId || null, email: created.email, role: created.role || 'customer' };
       const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
 
       res.status(201).json({ user: created, token });
@@ -100,7 +101,8 @@ router.post('/login', async (req, res) => {
       if (!match) return res.status(401).json({ error: 'Invalid credentials' });
       delete data.password;
       // Sign a JWT and return with user
-      const payload = { user_id: data.user_id || data.id || data.userId || null, email: data.email, role: data.role || 'customer' };
+  // include both user_id and users_id to be compatible with different DB PK names
+  const payload = { user_id: data.users_id || data.user_id || data.id || data.userId || null, users_id: data.users_id || data.user_id || data.id || data.userId || null, email: data.email, role: data.role || 'customer' };
       const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
       res.json({ user: data, token });
     } catch (err) {
