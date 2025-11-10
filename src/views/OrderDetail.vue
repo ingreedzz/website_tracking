@@ -43,7 +43,7 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { getToken } from '../lib/auth'
+import { apiGet } from '../lib/api'
 
 const route = useRoute()
 const id = route.params.id
@@ -126,16 +126,11 @@ function displayCustomValue(field) {
 async function loadOrder() {
   loading.value = true
   try {
-    const token = getToken()
-    if (!token) throw new Error('Not authenticated')
-    const resp = await fetch(`/api/orders/${id}`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`)
-    const data = await resp.json()
+    const data = await apiGet(`/api/orders/${id}`)
     order.value = data
   } catch (e) {
     console.error('[orderDetail] load error', e)
+    alert(e.message || 'Failed to load order')
     order.value = null
   } finally {
     loading.value = false

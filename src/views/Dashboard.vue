@@ -145,6 +145,7 @@ import { ref, onMounted, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase, getProfile } from '../lib/supabase'
 import { getCurrentUser, getToken, decodeToken, clearToken, getSupabaseAccessToken } from '../lib/auth'
+import { apiGet, apiPostFormData } from '../lib/api'
 
 export default {
   name: 'Dashboard',
@@ -223,23 +224,14 @@ export default {
       // prefer the role from token; fallback to profiles table
       isAdmin.value = payload.is_admin || payload.role === 'admin'
 
-      const token = getToken()
-      if (!token) {
-        loading.value = false
-        return
+      try {
+        // Use authenticated API helper
+        orders.value = await apiGet('/api/orders')
+      } catch (err) {
+        console.error('[Dashboard] Failed to load orders:', err.message)
+        alert(err.message || 'Failed to load orders')
       }
-
-      if (isAdmin.value) {
-        // Admin: fetch all orders
-        const resp = await fetch('/api/orders', { headers: { 'Authorization': `Bearer ${token}` } })
-        if (!resp.ok) throw new Error('Failed to fetch orders')
-        orders.value = await resp.json()
-      } else {
-        // User: fetch own orders
-        const resp = await fetch('/api/orders', { headers: { 'Authorization': `Bearer ${token}` } })
-        if (!resp.ok) throw new Error('Failed to fetch orders')
-        orders.value = await resp.json()
-      }
+      
       loading.value = false
     }
 
@@ -275,14 +267,6 @@ export default {
         // require a sablon image
         if (!fileRef.value) throw new Error('Sablon image is required')
 
-        // get access token from our local storage (app-managed JWT), fall back to Supabase access token
-        let accessToken = getToken()
-        if (!accessToken) {
-          const sb = getSupabaseAccessToken()
-          if (sb) accessToken = sb
-        }
-        if (!accessToken) throw new Error('No access token available')
-
         const fd = new FormData()
         fd.append('product', form.product || '')
         fd.append('model', form.model || '')
@@ -301,19 +285,8 @@ export default {
   fd.append('custom', JSON.stringify(form.custom || {}))
   if (fileRef.value) fd.append('file', fileRef.value)
 
-        const resp = await fetch('/api/server/orders', {
-          method: 'POST',
-          headers: {
-            Authorization: 'Bearer ' + accessToken
-          },
-          body: fd
-        })
-        if (!resp.ok) {
-          let errBody = null
-          try { errBody = await resp.json() } catch (e) { /* ignore */ }
-          throw new Error((errBody && errBody.error) ? errBody.error : 'Server error: ' + resp.status)
-        }
-        const json = await resp.json()
+        // Use authenticated API helper
+        const json = await apiPostFormData('/api/server/orders', fd)
         const created = json.order
         if (created) {
           orders.value.unshift(created)
