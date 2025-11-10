@@ -3,3 +3,5 @@ dist/
 .env
 .vscode/
 .vercel
+test_auth.js
+tmp/
