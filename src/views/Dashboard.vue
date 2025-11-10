@@ -145,6 +145,7 @@ import { ref, onMounted, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase, getProfile } from '../lib/supabase'
 import { getCurrentUser, getToken, decodeToken, clearToken, getSupabaseAccessToken } from '../lib/auth'
+import { apiGet, apiPostFormData } from '../lib/api'
 
 export default {
   name: 'Dashboard',
@@ -213,8 +214,8 @@ export default {
         loading.value = false
         return
       }
-      // token payload may have different property names for id (user_id, sub, or id)
-  const uid = payload.users_id || payload.user_id || payload.sub || payload.id || null
+      // Use users_id from token
+      const uid = payload.users_id || null
       if (!uid) {
         loading.value = false
         return
@@ -223,22 +224,12 @@ export default {
       // prefer the role from token; fallback to profiles table
       isAdmin.value = payload.is_admin || payload.role === 'admin'
 
-      const token = getToken()
-      if (!token) {
-        loading.value = false
-        return
-      }
-
-      if (isAdmin.value) {
-        // Admin: fetch all orders
-        const resp = await fetch('/api/orders', { headers: { 'Authorization': `Bearer ${token}` } })
-        if (!resp.ok) throw new Error('Failed to fetch orders')
-        orders.value = await resp.json()
-      } else {
-        // User: fetch own orders
-        const resp = await fetch('/api/orders', { headers: { 'Authorization': `Bearer ${token}` } })
-        if (!resp.ok) throw new Error('Failed to fetch orders')
-        orders.value = await resp.json()
+      try {
+        // Use API helper for authenticated request
+        orders.value = await apiGet('/orders')
+      } catch (err) {
+        console.error('[load] Failed to fetch orders', err)
+        alert(err.message || 'Failed to load orders')
       }
       loading.value = false
     }
@@ -289,75 +280,29 @@ export default {
           size: fileRef.value.size 
         });
 
-        // get access token from our local storage (app-managed JWT), fall back to Supabase access token
-        console.log('[FRONTEND] Getting access token...');
-        let accessToken = getToken();
-        if (!accessToken) {
-          console.log('[FRONTEND] No app token, trying Supabase token...');
-          const sb = getSupabaseAccessToken();
-          if (sb) accessToken = sb;
-        }
-        if (!accessToken) {
-          console.error('[FRONTEND] No access token available');
-          throw new Error('No access token available');
-        }
-        console.log('[FRONTEND] Access token obtained, length:', accessToken.length);
+        // Build form data
+        const fd = new FormData()
+        fd.append('product', form.product || '')
+        fd.append('model', form.model || '')
+        fd.append('size', form.size || '')
+        fd.append('color', form.color || '')
+        fd.append('address', form.address || '')
+        fd.append('phone', form.phone || '')
+        fd.append('quantity', String(form.quantity || 1))
+        const unitPrice = unitPriceForModel(form.model) || 0
+        const total = unitPrice * (Number(form.quantity || 1))
+        fd.append('unit_price', String(unitPrice))
+        fd.append('total_price', String(total))
+        fd.append('order_date', new Date().toISOString())
+        if (form.deadline) fd.append('deadline', form.deadline)
+        fd.append('payment_method', 'bank')
+        fd.append('custom', JSON.stringify(form.custom || {}))
+        if (fileRef.value) fd.append('file', fileRef.value)
 
-        const fd = new FormData();
-        fd.append('product', form.product || '');
-        fd.append('model', form.model || '');
-        fd.append('size', form.size || '');
-        fd.append('color', form.color || '');
-        fd.append('address', form.address || '');
-        fd.append('phone', form.phone || '');
-  fd.append('quantity', String(form.quantity || 1));
-  const unitPrice = unitPriceForModel(form.model) || 0;
-  const total = unitPrice * (Number(form.quantity || 1));
-  fd.append('unit_price', String(unitPrice));
-  fd.append('total_price', String(total));
-  fd.append('order_date', new Date().toISOString());
-  if (form.deadline) fd.append('deadline', form.deadline);
-  fd.append('payment_method', 'bank');
-  fd.append('custom', JSON.stringify(form.custom || {}));
-  if (fileRef.value) fd.append('file', fileRef.value);
-
-        console.log('[FRONTEND] Form data prepared:', {
-          product: form.product,
-          model: form.model,
-          size: form.size,
-          color: form.color,
-          quantity: form.quantity,
-          unit_price: unitPrice,
-          total_price: total,
-          hasFile: !!fileRef.value
-        });
-
-        console.log('[FRONTEND] Sending POST request to /api/server/orders...');
-        const resp = await fetch('/api/server/orders', {
-          method: 'POST',
-          headers: {
-            Authorization: 'Bearer ' + accessToken
-          },
-          body: fd
-        });
-        
-        console.log('[FRONTEND] Response status:', resp.status, resp.statusText);
-        
-        if (!resp.ok) {
-          let errBody = null;
-          try { 
-            errBody = await resp.json();
-            console.error('[FRONTEND] Error response body:', errBody);
-          } catch (e) { 
-            console.error('[FRONTEND] Could not parse error response as JSON');
-          }
-          throw new Error((errBody && errBody.error) ? errBody.error : 'Server error: ' + resp.status);
-        }
-        
-        const json = await resp.json();
-        console.log('[FRONTEND] Success response:', json);
-        
-        const created = json.order;
+        console.log('[FRONTEND] Sending POST /server/orders via apiPostFormData...');
+        // Use API helper for authenticated request (handles Authorization)
+        const json = await apiPostFormData('/server/orders', fd)
+        const created = json.order
         if (created) {
           console.log('[FRONTEND] Order created:', { id: created.id, status: created.status });
           orders.value.unshift(created);
