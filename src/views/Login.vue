@@ -60,6 +60,16 @@ export default {
         alert(err.message || String(err))
       }
     }
+    // redirect if already logged in
+    try {
+      const { onMounted } = require('vue')
+      onMounted(() => {
+        const { getCurrentUser } = require('../lib/auth')
+        if (getCurrentUser()) {
+          window.location.href = '/dashboard'
+        }
+      })
+    } catch (e) {}
 
     return { email, password, login }
   }

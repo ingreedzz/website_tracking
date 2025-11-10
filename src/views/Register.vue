@@ -60,4 +60,15 @@ export default {
     }
   }
 }
+
+// redirect if already logged in (for SPA navigations)
+try {
+  const { onMounted } = require('vue')
+  onMounted(() => {
+    const { getCurrentUser } = require('../lib/auth')
+    if (getCurrentUser()) {
+      window.location.href = '/dashboard'
+    }
+  })
+} catch (e) {}
 </script>

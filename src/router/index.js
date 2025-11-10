@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { getCurrentUser } from '../lib/auth'
 import Home from '../views/Home.vue'
 import Register from '../views/Register.vue'
 import Dashboard from '../views/Dashboard.vue'
@@ -18,6 +19,15 @@ const routes = [
 const router = createRouter({
   history: createWebHistory(),
   routes
+})
+
+// Global guard: redirect authenticated users away from login/register pages
+router.beforeEach((to, from, next) => {
+  const user = getCurrentUser()
+  if (user && (to.name === 'Login' || to.name === 'Register')) {
+    return next({ name: 'Dashboard' })
+  }
+  next()
 })
 
 export default router
