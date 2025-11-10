@@ -191,7 +191,7 @@ router.post('/server/orders', upload.single('file'), async (req, res) => {
     if (!m) return res.status(401).json({ error: 'Missing Authorization header' });
     const token = m[1];
     let payload = null;
-    try { payload = jwt.verify(token, JWT_SECRET); } catch (e) { return res.status(401).json({ error: 'Invalid token' }); }
+  try { payload = jwt.verify(token, JWT_SECRET); } catch (_e) { return res.status(401).json({ error: 'Invalid token' }); }
     const userId = payload && (payload.user_id || payload.users_id || payload.id || payload.sub) ? (payload.user_id || payload.users_id || payload.id || payload.sub) : null;
     if (!userId) return res.status(401).json({ error: 'Invalid token payload (no user id)' });
 
@@ -242,7 +242,7 @@ router.post('/server/orders', upload.single('file'), async (req, res) => {
           };
           await supabase.from('order_addresses').insert([addrObj]).catch(() => {});
         }
-      } catch (e) {
+  } catch (_e) {
         // non-fatal: log but continue
         console.warn('[ORDER] failed to insert order_addresses', e && e.message ? e.message : e);
       }
@@ -271,7 +271,7 @@ router.post('/server/orders', upload.single('file'), async (req, res) => {
       try {
         const { data: pu } = supabase.storage.from(UPLOAD_BUCKET).getPublicUrl(upData.path);
         publicUrl = pu && pu.publicUrl ? pu.publicUrl : null;
-      } catch (e) { /* ignore */ }
+  } catch (_e) { /* ignore */ }
 
       // Return created order in a frontend-friendly shape (id field)
       const out = {
@@ -299,7 +299,7 @@ router.post('/server/orders/:id/payment', upload.single('file'), async (req, res
     if (!m) return res.status(401).json({ error: 'Missing Authorization header' });
     const token = m[1];
     let payload = null;
-    try { payload = jwt.verify(token, JWT_SECRET); } catch (e) { return res.status(401).json({ error: 'Invalid token' }); }
+  try { payload = jwt.verify(token, JWT_SECRET); } catch (_e) { return res.status(401).json({ error: 'Invalid token' }); }
     const userId = payload && (payload.user_id || payload.users_id || payload.id || payload.sub) ? (payload.user_id || payload.users_id || payload.id || payload.sub) : null;
     if (!userId) return res.status(401).json({ error: 'Invalid token payload (no user id)' });
 
@@ -365,7 +365,7 @@ router.put('/server/orders/:id/status', async (req, res) => {
     if (!m) return res.status(401).json({ error: 'Missing Authorization header' });
     const token = m[1];
     let payload = null;
-    try { payload = jwt.verify(token, JWT_SECRET); } catch (e) { return res.status(401).json({ error: 'Invalid token' }); }
+  try { payload = jwt.verify(token, JWT_SECRET); } catch (_e) { return res.status(401).json({ error: 'Invalid token' }); }
     const userId = payload && (payload.user_id || payload.users_id || payload.id || payload.sub) ? (payload.user_id || payload.users_id || payload.id || payload.sub) : null;
     const role = payload && payload.role ? payload.role : 'customer';
     if (!userId) return res.status(401).json({ error: 'Invalid token payload (no user id)' });
@@ -408,7 +408,7 @@ router.put('/server/orders/:id/status', async (req, res) => {
       if (req.body && req.body.payment_status) {
         await supabase.from('payments').update({ status: req.body.payment_status }).eq('order_id', orderId).catch(() => {});
       }
-    } catch (e) { /* non-fatal */ }
+  } catch (_e) { /* non-fatal */ }
 
     return res.json({ order: updatedOrder, history: histIns || null });
   } catch (err) {
@@ -433,8 +433,8 @@ router.get('/health', async (req, res) => {
     }
 
     // Try a simple query to verify database connection
-    const url = `${REST_BASE}/users?select=count`;
-    const resp = await axios.get(url, { headers: SB_HEADERS });
+  const url = `${REST_BASE}/users?select=count`;
+  await axios.get(url, { headers: SB_HEADERS });
     
     res.json({ 
       status: 'ok',

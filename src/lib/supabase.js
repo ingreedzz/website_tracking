@@ -11,7 +11,7 @@ function makeClient(key) {
 // Use stored Supabase access token if available; fall back to anon key
 let initialKey = null
 if (url && anon) {
-  try { initialKey = localStorage.getItem('sb_access_token') || anon } catch (e) { initialKey = anon }
+  try { initialKey = localStorage.getItem('sb_access_token') || anon } catch (_e) { initialKey = anon }
 }
 
 // Only create client if we have keys
@@ -22,8 +22,8 @@ export function setSupabaseAccessToken(token) {
     const key = token || anon
     supabase = makeClient(key)
     console.log('[supabase] set access token, client reinitialized')
-  } catch (e) {
-    console.warn('[supabase] setSupabaseAccessToken failed', e && e.message ? e.message : e)
+  } catch (_e) {
+    console.warn('[supabase] setSupabaseAccessToken failed', _e && _e.message ? _e.message : _e)
   }
 }
 
@@ -35,8 +35,8 @@ export async function getProfile(userId) {
     if (!uerr && udata) {
       return { id: udata.users_id, email: udata.email, name: udata.name || null, phone: udata.phone || null, role: udata.role || null, created_at: udata.created_at }
     }
-  } catch (e) {
-    console.warn('[supabase] getProfile users query failed, will try profiles', e && e.message ? e.message : e)
+  } catch (_e) {
+    console.warn('[supabase] getProfile users query failed, will try profiles', _e && _e.message ? _e.message : _e)
   }
 
   // fallback to profiles table if users row not present
@@ -47,8 +47,8 @@ export async function getProfile(userId) {
       return null
     }
     return data || null
-  } catch (e) {
-    console.error('[supabase] getProfile profiles exception', e && e.message ? e.message : e)
+  } catch (_e) {
+    console.error('[supabase] getProfile profiles exception', _e && _e.message ? _e.message : _e)
     return null
   }
 }

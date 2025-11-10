@@ -18,7 +18,7 @@ async function executeQuery(queryFn, operation = 'query') {
 // Health check function
 async function checkDatabaseConnection() {
     try {
-        const result = await supabaseQuery(async (supabase) => {
+        const _result = await supabaseQuery(async (supabase) => {
             const { data, error } = await supabase.from('users').select('count').limit(1);
             if (error) throw error;
             return data;

@@ -1,20 +1,20 @@
 import { getAllUsers, addUser } from '../../src/models/index';
 
 class OrderController {
-    async createOrder(req, res) {
+    async createOrder(_req, _res) {
         // Logic to create a new order
     }
 
-    async getOrder(req, res) {
+    async getOrder(_req, _res) {
         // Logic to retrieve an existing order
     }
 
-    async updateOrder(req, res) {
+    async updateOrder(_req, _res) {
         // Logic to update an existing order
     }
 
     // Fetch all users
-    async fetchUsers(req, res) {
+    async fetchUsers(_req, res) {
         try {
             const users = await getAllUsers();
             res.json(users);
@@ -24,9 +24,9 @@ class OrderController {
     }
 
     // Add a new user
-    async createUser(req, res) {
+    async createUser(_req, res) {
         try {
-            const user = req.body;
+            const user = _req.body;
             const newUser = await addUser(user);
             res.status(201).json(newUser);
         } catch (error) {
