@@ -142,6 +142,7 @@
 <script>
 import OrderCard from '../components/OrderCard.vue'
 import { ref, onMounted, reactive } from 'vue'
+import { useRouter } from 'vue-router'
 import { supabase, getProfile } from '../lib/supabase'
 import { getCurrentUser, getToken, decodeToken, clearToken, getSupabaseAccessToken } from '../lib/auth'
 
@@ -149,6 +150,7 @@ export default {
   name: 'Dashboard',
   components: { OrderCard },
   setup() {
+    const router = useRouter()
     const orders = ref([])
     const loading = ref(false)
     const isAdmin = ref(false)
@@ -319,9 +321,13 @@ export default {
           try { await preloadPublicUrls([created]) } catch (e) { /* ignore */ }
         }
         alert('Order created (server upload)')
-        // redirect user to payment page for this order so they can upload proof
+        // redirect user to payment page for this order so they can upload proof (SPA navigation)
         if (created && created.id) {
-          window.location.href = '/payment?order=' + created.id
+          try {
+            await router.push({ name: 'Payment', query: { order: created.id } })
+          } catch (e) {
+            console.warn('[handleCreate] router.push to Payment failed', e)
+          }
           return
         }
         viewMode.value = 'list'
@@ -333,7 +339,7 @@ export default {
       }
     }
 
-    function goToDetail(id) { return (window.location.href = '/orders/' + id) }
+  function goToDetail(id) { try { router.push({ name: 'OrderDetail', params: { id } }) } catch (e) { console.warn('[goToDetail] router.push failed', e) } }
     function trackOrder(id) { alert('Track order ' + id) }
 
     async function getPublicPreview(path) {
@@ -426,7 +432,7 @@ export default {
 
     async function logout() {
       clearToken()
-      window.location.href = '/'
+      try { await router.push({ name: 'Home' }) } catch (e) { console.warn('[logout] router.push failed', e) }
     }
 
     // small initialization: preload public urls for existing orders

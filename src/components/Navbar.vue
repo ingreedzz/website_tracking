@@ -20,6 +20,7 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { getCurrentUser, clearToken } from '../lib/auth'
 
 const loggedIn = ref(false)
@@ -36,18 +37,18 @@ function refreshUser() {
   }
 }
 
+const router = useRouter()
+
 function doLogout() {
   clearToken()
   refreshUser()
   // keep navigation inside the SPA so we don't trigger cross-deploy full reloads
   window.dispatchEvent(new Event('auth-change'))
-  // prefer router navigation when available
+  // navigate using the router (SPA navigation only)
   try {
-    // router-link isn't available here so use location fallback which keeps same-origin
-    window.history.pushState({}, '', '/')
-    window.dispatchEvent(new Event('popstate'))
+    router.push({ name: 'Home' }).catch(() => {})
   } catch (e) {
-    window.location.href = '/'
+    console.warn('[navbar] router.push failed on logout', e)
   }
 }
 

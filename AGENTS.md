@@ -47,7 +47,7 @@ Read PROGRESS.md → Implement → Test → Update PROGRESS.md → Commit
 
 - **Framework**: Vue.js
 - **Language**: [Add language here]
-- **Database**: [Add database here]
+- **Database**: supabase
 - **Styling**: [Add styling solution]
 
 ## Development Commands

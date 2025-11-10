@@ -22,6 +22,8 @@
 </template>
 
 <script>
+import { getCurrentUser } from '../lib/auth'
+
 export default {
   name: 'Register',
   data() {
@@ -30,29 +32,30 @@ export default {
   methods: {
     async register() {
       try {
-        const resp = await fetch('/api/register', {
+        const apiBase = import.meta.env.VITE_API_URL || ''
+        const resp = await fetch((apiBase.replace(/\/$/, '') || '') + '/api/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: this.form.name, email: this.form.email, password: this.form.password })
         })
         if (!resp.ok) {
-          // try JSON first, then text fallback so we surface server messages
-          let eb = null
-          try { eb = await resp.json() } catch (e) {}
-          if (eb && eb.error) throw new Error(eb.error)
-          try {
-            const txt = await resp.text()
-            if (txt) throw new Error(`Server ${resp.status}: ${txt}`)
-          } catch (e) {}
-          throw new Error('Registration failed (' + resp.status + ')')
+          let data = null
+          try { data = await resp.json() } catch (e) {}
+          if (data && data.error) throw new Error(data.error)
+          throw new Error('Register failed (' + resp.status + ')')
         }
-        const json = await resp.json()
-        // Backend returns { user, token }
-        const token = json.token
-        const { setToken } = await import('../lib/auth')
-        if (token) setToken(token)
-        alert('Registered successfully')
-        this.$router.push({ name: 'Home' })
+        const data = await resp.json().catch(() => null)
+        // if backend also returns token, set it and notify
+        if (data && data.token) {
+          const { setToken } = await import('../lib/auth')
+          setToken(data.token)
+          window.dispatchEvent(new Event('auth-change'))
+          // navigate to dashboard using SPA router only
+          try { this.$router.push({ name: 'Dashboard' }) } catch (e) { console.warn('[register] router.push failed', e) }
+        } else {
+          alert('Registered successfully')
+          try { this.$router.push({ name: 'Home' }) } catch (e) { console.warn('[register] router.push failed', e) }
+        }
       } catch (err) {
         console.error('[register] error', err)
         alert(err.message || String(err))
@@ -61,14 +64,4 @@ export default {
   }
 }
 
-// redirect if already logged in (for SPA navigations)
-try {
-  const { onMounted } = require('vue')
-  onMounted(() => {
-    const { getCurrentUser } = require('../lib/auth')
-    if (getCurrentUser()) {
-      window.location.href = '/dashboard'
-    }
-  })
-} catch (e) {}
 </script>

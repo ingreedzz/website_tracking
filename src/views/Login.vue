@@ -65,8 +65,8 @@ export default {
   try {
     await router.push({ name: 'Dashboard' })
   } catch (e) {
-    // fallback to location change on error
-    window.location.href = '/dashboard'
+    // routing failed; warn and continue — do NOT perform a full page reload to another deploy
+    console.warn('[login] router.push failed', e)
   }
       } catch (err) {
         alert(err.message || String(err))
@@ -75,7 +75,7 @@ export default {
     // redirect if already logged in
     onMounted(() => {
       if (getCurrentUser()) {
-        try { router.push({ name: 'Dashboard' }) } catch (e) { window.location.href = '/dashboard' }
+        try { router.push({ name: 'Dashboard' }) } catch (e) { console.warn('[login] redirect failed', e) }
       }
     })
 

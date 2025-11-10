@@ -19,7 +19,8 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { getCurrentUser, clearToken } from '../lib/auth'
 
 const loggedIn = ref(false)
@@ -39,11 +40,25 @@ function refreshUser() {
 function doLogout() {
   clearToken()
   refreshUser()
-  window.location.href = '/'
+  // keep navigation inside the SPA so we don't trigger cross-deploy full reloads
+  window.dispatchEvent(new Event('auth-change'))
+  // navigate using the router when possible
+  try {
+    const router = useRouter()
+    router.push({ name: 'Home' }).catch(() => {})
+  } catch (e) {
+    // fallback to history API or full reload
+    try { window.history.pushState({}, '', '/'); window.dispatchEvent(new Event('popstate')) } catch (err) { window.location.href = '/' }
+  }
 }
 
 onMounted(() => {
   refreshUser()
+  window.addEventListener('auth-change', refreshUser)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('auth-change', refreshUser)
 })
 </script>
 
