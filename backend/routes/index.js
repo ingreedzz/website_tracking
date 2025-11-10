@@ -134,35 +134,142 @@ router.get('/users', verifyToken, requireAdmin, async (req, res) => {
 });
 
 router.get('/orders', verifyToken, requireAdmin, async (req, res) => {
+  console.log('[GET /orders] Fetching all orders for admin');
+  console.log('[GET /orders] User:', { users_id: req.user.users_id, role: req.user.role });
   try {
     if (!REST_BASE) return res.status(500).json({ error: 'Supabase not configured' })
     // include related order_items in the response for admin UI
     const url = `${REST_BASE}/orders?select=*,order_items(*)`;
+    console.log('[GET /orders] Fetching from Supabase:', url);
     const resp = await axios.get(url, { headers: SB_HEADERS });
-    res.json(Array.isArray(resp.data) ? resp.data : []);
+    const orders = Array.isArray(resp.data) ? resp.data : [];
+    console.log('[GET /orders] Retrieved orders:', orders.length);
+    
+    // Normalize response: add 'id' field and flatten order_items data
+    const normalized = orders.map(order => {
+      const firstItem = order.order_items && order.order_items.length > 0 ? order.order_items[0] : null;
+      return {
+        ...order,
+        id: order.orders_id, // Add id field for frontend compatibility
+        product: firstItem?.product_snapshot?.product || null,
+        model: firstItem?.product_snapshot?.model || null,
+        size: firstItem?.product_snapshot?.size || null,
+        color: firstItem?.product_snapshot?.color || null,
+        quantity: firstItem?.quantity || null,
+        unit_price: firstItem?.unit_price || null,
+        total_price: order.total || null,
+        sablon_path: firstItem?.sablon_path || null,
+        custom: firstItem?.customization || {}
+      };
+    });
+    
+    console.log('[GET /orders] Normalized orders:', normalized.length);
+    res.json(normalized);
   } catch (err) {
     console.error('[ORDERS] axios error', err && err.response ? { status: err.response.status, data: err.response.data } : err.message)
     res.status(500).json({ error: err.message });
   }
 });
 
+// User-specific orders endpoint (no admin required)
+router.get('/user/orders', verifyToken, async (req, res) => {
+  console.log('[GET /user/orders] Fetching orders for user');
+  console.log('[GET /user/orders] User:', { users_id: req.user.users_id, role: req.user.role });
+  try {
+    const userId = req.user.users_id;
+    if (!userId) {
+      console.error('[GET /user/orders] No user ID');
+      return res.status(401).json({ error: 'User ID not found' });
+    }
+    
+    if (!REST_BASE) return res.status(500).json({ error: 'Supabase not configured' })
+    
+    // Fetch only orders for this user
+    const url = `${REST_BASE}/orders?user_id=eq.${encodeURIComponent(userId)}&select=*,order_items(*)`;
+    console.log('[GET /user/orders] Fetching from Supabase:', url);
+    const resp = await axios.get(url, { headers: SB_HEADERS });
+    const orders = Array.isArray(resp.data) ? resp.data : [];
+    console.log('[GET /user/orders] Retrieved orders:', orders.length);
+    
+    // Normalize response: add 'id' field and flatten order_items data
+    const normalized = orders.map(order => {
+      const firstItem = order.order_items && order.order_items.length > 0 ? order.order_items[0] : null;
+      return {
+        ...order,
+        id: order.orders_id, // Add id field for frontend compatibility
+        product: firstItem?.product_snapshot?.product || null,
+        model: firstItem?.product_snapshot?.model || null,
+        size: firstItem?.product_snapshot?.size || null,
+        color: firstItem?.product_snapshot?.color || null,
+        quantity: firstItem?.quantity || null,
+        unit_price: firstItem?.unit_price || null,
+        total_price: order.total || null,
+        sablon_path: firstItem?.sablon_path || null,
+        custom: firstItem?.customization || {}
+      };
+    });
+    
+    console.log('[GET /user/orders] Normalized orders:', normalized.length);
+    res.json(normalized);
+  } catch (err) {
+    console.error('[GET /user/orders] error', err && err.response ? { status: err.response.status, data: err.response.data } : err.message)
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/orders/:id', verifyToken, async (req, res) => {
+  console.log('[GET /orders/:id] Fetching order details');
   try {
     const id = req.params.id;
     if (!id) return res.status(400).json({ error: 'order id required' });
+    console.log('[GET /orders/:id] Order ID:', id);
+    console.log('[GET /orders/:id] User:', { users_id: req.user.users_id, role: req.user.role });
+    
     if (!REST_BASE) return res.status(500).json({ error: 'Supabase not configured' })
     const url = `${REST_BASE}/orders?orders_id=eq.${encodeURIComponent(id)}&select=*,order_items(*)`;
+    console.log('[GET /orders/:id] Fetching from Supabase:', url);
     const resp = await axios.get(url, { headers: SB_HEADERS });
     const rows = Array.isArray(resp.data) ? resp.data : [];
-    if (!rows.length) return res.status(404).json({ error: 'Order not found' });
+    console.log('[GET /orders/:id] Found orders:', rows.length);
+    
+    if (!rows.length) {
+      console.log('[GET /orders/:id] Order not found');
+      return res.status(404).json({ error: 'Order not found' });
+    }
     
     // Ownership check: users can only access their own orders unless admin
     const order = rows[0];
+    console.log('[GET /orders/:id] Order user_id:', order.user_id);
+    console.log('[GET /orders/:id] Access check:', { 
+      isAdmin: req.user.role === 'admin',
+      orderUserId: order.user_id,
+      requestUserId: req.user.users_id,
+      match: order.user_id === req.user.users_id
+    });
+    
     if (req.user.role !== 'admin' && order.user_id !== req.user.users_id) {
+      console.log('[GET /orders/:id] Access denied');
       return res.status(403).json({ error: 'Access denied' });
     }
     
-    res.json(order);
+    // Normalize response: add 'id' field and flatten order_items data
+    const firstItem = order.order_items && order.order_items.length > 0 ? order.order_items[0] : null;
+    const normalized = {
+      ...order,
+      id: order.orders_id, // Add id field for frontend compatibility
+      product: firstItem?.product_snapshot?.product || null,
+      model: firstItem?.product_snapshot?.model || null,
+      size: firstItem?.product_snapshot?.size || null,
+      color: firstItem?.product_snapshot?.color || null,
+      quantity: firstItem?.quantity || null,
+      unit_price: firstItem?.unit_price || null,
+      total_price: order.total || null,
+      sablon_path: firstItem?.sablon_path || null,
+      custom: firstItem?.customization || {}
+    };
+    
+    console.log('[GET /orders/:id] Returning normalized order');
+    res.json(normalized);
   } catch (err) {
     console.error('[ORDERS/:id] axios error', err && err.response ? { status: err.response.status, data: err.response.data } : err.message)
     res.status(500).json({ error: err.message });
