@@ -9,6 +9,63 @@
 
 ## 📅 Recent timeline
 
+### November 10, 2025 - Fix Order Viewing and Creation Issues
+
+**Critical Issues Fixed:**
+1. **Favicon 404 Error**: Added inline SVG favicon to `index.html` to prevent browser 404 requests
+2. **Missing Required Param "id" Error**: Backend now normalizes `orders_id` field to `id` in all order responses for frontend compatibility
+3. **Authorization Error for Regular Users**: Created new `/user/orders` endpoint so non-admin users can view their own orders
+4. **Admin Views Using Unauthenticated Requests**: Updated AdminDashboard and AdminOrderDetail to use authenticated `apiGet` helper
+
+**Backend Changes (backend/routes/index.js):**
+- Added `GET /user/orders` endpoint - returns orders filtered by authenticated user's ID
+- Enhanced `GET /orders` endpoint - normalizes response with `id` field and flattened product data
+- Enhanced `GET /orders/:id` endpoint - normalizes response and adds comprehensive debug logging
+- All order endpoints now include extensive debug logging for troubleshooting in production
+
+**Frontend Changes:**
+- `src/views/Dashboard.vue`:
+  - Added role-based endpoint selection (users → `/user/orders`, admins → `/orders`)
+  - Enhanced debug logging for order loading and navigation
+  - Fixed router navigation to handle both `id` and `orders_id` fields
+  - Updated template to display orders with normalized field names
+  
+- `src/views/AdminDashboard.vue`:
+  - Replaced raw fetch calls with `apiGet` helper for authentication
+  - Added comprehensive debug logging
+  - Updated template to use normalized order data
+  - Fixed date formatting
+  
+- `src/views/AdminOrderDetail.vue`:
+  - Replaced raw fetch calls with `apiGet` helper
+  - Added comprehensive debug logging
+  - Updated to handle normalized order response
+  - Fixed token retrieval using `getToken()` helper
+
+**Testing & Validation:**
+- ✅ Vite build successful (307.87 KB bundle)
+- ✅ Backend syntax validation passed
+- ✅ No breaking changes to existing functionality
+- ⚠️ CodeQL identified pre-existing issue: Order endpoints are not rate-limited (recommend adding rate-limiting middleware in future)
+
+**Files Modified:**
+- `index.html` - Added favicon
+- `public/favicon.ico` - Created favicon file
+- `backend/routes/index.js` - Added user orders endpoint, normalized responses, enhanced logging
+- `src/views/Dashboard.vue` - Role-based API calls, debug logging, field name handling
+- `src/views/AdminDashboard.vue` - Authenticated API calls, debug logging
+- `src/views/AdminOrderDetail.vue` - Authenticated API calls, debug logging
+- `dist/index.html` - Updated build output
+
+**Next Steps:**
+1. Deploy backend changes to Render to activate new `/user/orders` endpoint
+2. Test end-to-end flow: register → login → create order → view orders → view detail
+3. Test admin flow: view all orders → view details → update status
+4. Monitor production logs for debug output
+5. Consider adding rate-limiting middleware to order endpoints for security
+
+---
+
 ### November 10, 2025 - Order Submission Bug Fix & Debug Logging
 
 **Critical Bug Fixed:**

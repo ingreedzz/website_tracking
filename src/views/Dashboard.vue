@@ -109,8 +109,8 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="o in orders" :key="o.id">
-              <td class="p-2 border">{{ o.id }}</td>
+            <tr v-for="o in orders" :key="o.id || o.orders_id">
+              <td class="p-2 border">{{ o.id || o.orders_id }}</td>
               <td class="p-2 border">{{ o.product }}</td>
               <td class="p-2 border">{{ o.model }}</td>
               <td class="p-2 border">{{ o.size }}</td>
@@ -129,7 +129,7 @@
                     <div v-else>-</div>
                   </td>
                   <td class="p-2 border">
-                    <button @click="goToDetail(o.id)" class="px-2 py-1 bg-blue-500 text-white rounded">View</button>
+                    <button @click="goToDetail(o.id || o.orders_id)" class="px-2 py-1 bg-blue-500 text-white rounded">View</button>
                   </td>
             </tr>
           </tbody>
@@ -207,31 +207,51 @@ export default {
     }
 
     async function load() {
+      console.log('[Dashboard] === Loading orders ===');
       loading.value = true
       const payload = getCurrentUser() || decodeToken(getToken())
       if (!payload) {
-        // not logged in
+        console.log('[Dashboard] User not logged in');
         loading.value = false
         return
       }
+      console.log('[Dashboard] User payload:', { users_id: payload.users_id, role: payload.role });
+      
       // Use users_id from token
       const uid = payload.users_id || null
       if (!uid) {
+        console.error('[Dashboard] No users_id in token');
         loading.value = false
         return
       }
       userId.value = uid
       // prefer the role from token; fallback to profiles table
       isAdmin.value = payload.is_admin || payload.role === 'admin'
+      console.log('[Dashboard] User role:', { isAdmin: isAdmin.value });
 
       try {
+        // Use different endpoint based on role
+        const endpoint = isAdmin.value ? '/orders' : '/user/orders';
+        console.log('[Dashboard] Fetching orders from', endpoint);
+        
         // Use API helper for authenticated request
-        orders.value = await apiGet('/orders')
+        orders.value = await apiGet(endpoint)
+        console.log('[Dashboard] Orders loaded:', orders.value.length);
+        if (orders.value.length > 0) {
+          console.log('[Dashboard] First order sample:', {
+            id: orders.value[0].id,
+            orders_id: orders.value[0].orders_id,
+            product: orders.value[0].product,
+            status: orders.value[0].status
+          });
+        }
       } catch (err) {
-        console.error('[load] Failed to fetch orders', err)
+        console.error('[Dashboard] Failed to fetch orders', err)
+        console.error('[Dashboard] Error details:', err.message);
         alert(err.message || 'Failed to load orders')
       }
       loading.value = false
+      console.log('[Dashboard] === Load complete ===');
     }
 
     function resetForm() {
@@ -335,7 +355,18 @@ export default {
       }
     }
 
-  function goToDetail(id) { try { router.push({ name: 'OrderDetail', params: { id } }) } catch (e) { console.warn('[goToDetail] router.push failed', e) } }
+  function goToDetail(id) { 
+    console.log('[goToDetail] Navigating to order detail:', id);
+    if (!id) {
+      console.error('[goToDetail] No order ID provided');
+      return;
+    }
+    try { 
+      router.push({ name: 'OrderDetail', params: { id: String(id) } }) 
+    } catch (e) { 
+      console.error('[goToDetail] router.push failed', e);
+    } 
+  }
     function trackOrder(id) { alert('Track order ' + id) }
 
     async function getPublicPreview(path) {
