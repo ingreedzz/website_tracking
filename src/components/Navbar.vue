@@ -4,7 +4,8 @@
       <h1 class="text-lg font-bold">Chiangho Tracking Order</h1>
       <nav class="flex items-center space-x-2">
         <router-link to="/" class="px-3 py-2 rounded hover:bg-white/10">Home</router-link>
-  <router-link v-if="loggedIn" to="/dashboard" class="px-3 py-2 rounded hover:bg-white/10">Dashboard</router-link>
+        <router-link v-if="isAdmin" to="/admin" class="px-3 py-2 rounded hover:bg-white/10">Admin</router-link>
+        <router-link v-if="loggedIn" to="/dashboard" class="px-3 py-2 rounded hover:bg-white/10">Dashboard</router-link>
         <router-link v-if="loggedIn" to="/payment" class="px-3 py-2 rounded hover:bg-white/10">Payment</router-link>
         <router-link v-if="!loggedIn" to="/register" class="px-3 py-2 rounded hover:bg-white/10">Register</router-link>
         <router-link v-if="!loggedIn" to="/login" class="px-3 py-2 rounded hover:bg-white/10">Login</router-link>
@@ -25,15 +26,18 @@ import { getCurrentUser, clearToken } from '../lib/auth'
 
 const loggedIn = ref(false)
 const userEmail = ref('')
+const isAdmin = ref(false)
 
 function refreshUser() {
   const u = getCurrentUser()
     if (u) {
     loggedIn.value = true
     userEmail.value = u.email || u.sub || u.users_id || u.user_id || ''
+    isAdmin.value = (u.role === 'admin' || u.is_admin === true)
   } else {
     loggedIn.value = false
     userEmail.value = ''
+    isAdmin.value = false
   }
 }
 

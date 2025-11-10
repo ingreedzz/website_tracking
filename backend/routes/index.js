@@ -127,7 +127,8 @@ router.get('/users', async (req, res) => {
 router.get('/orders', async (req, res) => {
   try {
     if (!REST_BASE) return res.status(500).json({ error: 'Supabase not configured' })
-    const url = `${REST_BASE}/orders?select=*`;
+    // include related order_items in the response for admin UI
+    const url = `${REST_BASE}/orders?select=*,order_items(*)`;
     const resp = await axios.get(url, { headers: SB_HEADERS });
     res.json(Array.isArray(resp.data) ? resp.data : []);
   } catch (err) {
@@ -141,7 +142,7 @@ router.get('/orders/:id', async (req, res) => {
     const id = req.params.id;
     if (!id) return res.status(400).json({ error: 'order id required' });
     if (!REST_BASE) return res.status(500).json({ error: 'Supabase not configured' })
-    const url = `${REST_BASE}/orders?order_id=eq.${encodeURIComponent(id)}`;
+  const url = `${REST_BASE}/orders?order_id=eq.${encodeURIComponent(id)}&select=*,order_items(*)`;
     const resp = await axios.get(url, { headers: SB_HEADERS });
     const rows = Array.isArray(resp.data) ? resp.data : [];
     if (!rows.length) return res.status(404).json({ error: 'Order not found' });
@@ -151,6 +152,33 @@ router.get('/orders/:id', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// Simple proxy endpoints for order_addresses and payments for admin UI
+router.get('/order_addresses', async (req, res) => {
+  try {
+    const q = req.query || {}
+    let query = supabase.from('order_addresses').select('*')
+    if (q.order_id) query = query.eq('order_id', q.order_id)
+    const { data, error } = await query
+    if (error) return res.status(500).json({ error: error.message || error })
+    res.json(Array.isArray(data) ? data : [])
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+router.get('/payments', async (req, res) => {
+  try {
+    const q = req.query || {}
+    let query = supabase.from('payments').select('*')
+    if (q.order_id) query = query.eq('order_id', q.order_id)
+    const { data, error } = await query
+    if (error) return res.status(500).json({ error: error.message || error })
+    res.json(Array.isArray(data) ? data : [])
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
 
 // Create order (used by frontend: POST /api/server/orders)
 router.post('/server/orders', upload.single('file'), async (req, res) => {
@@ -202,6 +230,21 @@ router.post('/server/orders', upload.single('file'), async (req, res) => {
         return res.status(500).json({ error: 'Failed to create order' });
       }
 
+      // optionally insert delivery/billing address
+      try {
+        if (address || phone) {
+          const addrObj = {
+            order_id: orderInsert.orders_id,
+            address: address || null,
+            phone: phone || null
+          };
+          await supabase.from('order_addresses').insert([addrObj]).catch(() => {});
+        }
+      } catch (e) {
+        // non-fatal: log but continue
+        console.warn('[ORDER] failed to insert order_addresses', e && e.message ? e.message : e);
+      }
+
       // insert into order_items (lightweight snapshot)
       const itemObj = {
         order_id: orderInsert.orders_id,
@@ -242,6 +285,133 @@ router.post('/server/orders', upload.single('file'), async (req, res) => {
     }
   } catch (err) {
     console.error('[server/orders] handler error', err)
+    return res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+// Upload payment proof and create a payments row
+router.post('/server/orders/:id/payment', upload.single('file'), async (req, res) => {
+  try {
+    // authenticate
+    const auth = req.headers.authorization || '';
+    const m = auth.match(/^Bearer\s+(.*)$/i);
+    if (!m) return res.status(401).json({ error: 'Missing Authorization header' });
+    const token = m[1];
+    let payload = null;
+    try { payload = jwt.verify(token, JWT_SECRET); } catch (e) { return res.status(401).json({ error: 'Invalid token' }); }
+    const userId = payload && (payload.user_id || payload.users_id || payload.id || payload.sub) ? (payload.user_id || payload.users_id || payload.id || payload.sub) : null;
+    if (!userId) return res.status(401).json({ error: 'Invalid token payload (no user id)' });
+
+    const orderId = req.params.id;
+    if (!orderId) return res.status(400).json({ error: 'order id required' });
+
+    // verify order exists
+    const { data: orderRows, error: orderErr } = await supabase.from('orders').select('*').eq('orders_id', orderId).maybeSingle();
+    if (orderErr) return res.status(500).json({ error: 'Failed to query order' });
+    if (!orderRows) return res.status(404).json({ error: 'Order not found' });
+
+    // accept file upload (optional)
+    let proofPath = null;
+    if (req.file) {
+      const file = req.file;
+      const ext = (file.originalname && file.originalname.split('.').pop()) || 'jpg';
+      const path = `users/${userId}/payments/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+      const contentType = file.mimetype || 'application/octet-stream';
+      const { data: upData, error: upErr } = await supabase.storage.from(UPLOAD_BUCKET).upload(path, file.buffer, { contentType });
+      if (upErr) {
+        console.error('[PAYMENT] storage upload error', upErr)
+        return res.status(500).json({ error: 'Failed to upload payment proof' });
+      }
+      proofPath = upData.path;
+    }
+
+    const amount = req.body.amount ? Number(req.body.amount) : null;
+    const method = req.body.method || 'bank_transfer';
+    const notes = req.body.notes || null;
+
+    const paymentObj = {
+      order_id: orderId,
+      amount: amount,
+      method: method,
+      status: 'pending',
+      proof_url: proofPath,
+      notes: notes
+    };
+
+    const { data: paymentInsert, error: payErr } = await supabase.from('payments').insert([paymentObj]).select().maybeSingle();
+    if (payErr || !paymentInsert) {
+      console.error('[PAYMENT] insert error', payErr)
+      // cleanup upload if present
+      if (proofPath) await supabase.storage.from(UPLOAD_BUCKET).remove([proofPath]).catch(() => {});
+      return res.status(500).json({ error: 'Failed to record payment' });
+    }
+
+    // update orders.payment_status to pending (or keep as provided)
+    await supabase.from('orders').update({ payment_status: 'pending' }).eq('orders_id', orderId).catch(() => {});
+
+    return res.status(201).json({ payment: paymentInsert });
+  } catch (err) {
+    console.error('[server/orders/:id/payment] handler error', err)
+    return res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+// Update order status and record history (admin only)
+router.put('/server/orders/:id/status', async (req, res) => {
+  try {
+    const auth = req.headers.authorization || '';
+    const m = auth.match(/^Bearer\s+(.*)$/i);
+    if (!m) return res.status(401).json({ error: 'Missing Authorization header' });
+    const token = m[1];
+    let payload = null;
+    try { payload = jwt.verify(token, JWT_SECRET); } catch (e) { return res.status(401).json({ error: 'Invalid token' }); }
+    const userId = payload && (payload.user_id || payload.users_id || payload.id || payload.sub) ? (payload.user_id || payload.users_id || payload.id || payload.sub) : null;
+    const role = payload && payload.role ? payload.role : 'customer';
+    if (!userId) return res.status(401).json({ error: 'Invalid token payload (no user id)' });
+
+    if (role !== 'admin') return res.status(403).json({ error: 'Admin role required' });
+
+    const orderId = req.params.id;
+    const { status, note } = req.body;
+    if (!orderId || !status) return res.status(400).json({ error: 'order id and new status required' });
+
+    // fetch current order
+    const { data: orderRow } = await supabase.from('orders').select('*').eq('orders_id', orderId).maybeSingle();
+    if (!orderRow) return res.status(404).json({ error: 'Order not found' });
+    const oldStatus = orderRow.status || null;
+
+    // update order (status and optional payment_status)
+    const updates = { status: status };
+    if (req.body && req.body.payment_status) updates.payment_status = req.body.payment_status;
+    const { data: updatedOrder, error: updErr } = await supabase.from('orders').update(updates).eq('orders_id', orderId).select().maybeSingle();
+    if (updErr) {
+      console.error('[ORDER STATUS] update error', updErr)
+      return res.status(500).json({ error: 'Failed to update order status' });
+    }
+
+    // insert status history
+    const histObj = {
+      order_id: orderId,
+      old_status: oldStatus,
+      new_status: status,
+      changed_by: userId,
+      note: note || null
+    };
+    const { data: histIns, error: histErr } = await supabase.from('order_status_history').insert([histObj]).select().maybeSingle();
+    if (histErr) {
+      console.warn('[ORDER STATUS] failed to insert history', histErr)
+    }
+
+    // if payment_status was provided and payments exist, try to update payments rows
+    try {
+      if (req.body && req.body.payment_status) {
+        await supabase.from('payments').update({ status: req.body.payment_status }).eq('order_id', orderId).catch(() => {});
+      }
+    } catch (e) { /* non-fatal */ }
+
+    return res.json({ order: updatedOrder, history: histIns || null });
+  } catch (err) {
+    console.error('[server/orders/:id/status] handler error', err)
     return res.status(500).json({ error: err.message || String(err) });
   }
 });

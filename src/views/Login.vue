@@ -61,11 +61,11 @@ export default {
   const emailStr = (json.user && json.user.email) || (payload && payload.email) || ''
   const role = (payload && (payload.role || (payload.is_admin ? 'admin' : null))) || (json.user && json.user.role) || 'customer'
   alert('Logged in: ' + (emailStr || '') + ' (role: ' + role + ')')
-  // use router to navigate inside the SPA (prevent pushing the user to another deploy host)
+  // route admins to AdminDashboard, others to regular Dashboard
   try {
-    await router.push({ name: 'Dashboard' })
+    if (role === 'admin') await router.push({ name: 'AdminDashboard' })
+    else await router.push({ name: 'Dashboard' })
   } catch (e) {
-    // routing failed; warn and continue — do NOT perform a full page reload to another deploy
     console.warn('[login] router.push failed', e)
   }
       } catch (err) {
