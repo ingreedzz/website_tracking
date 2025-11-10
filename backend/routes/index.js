@@ -213,7 +213,8 @@ router.post('/server/orders', upload.single('file'), async (req, res) => {
       return res.status(500).json({ error: 'Failed to upload file' });
     }
 
-    // insert into orders table
+        // Prefer users_id (uuid) when present — some schemas use users_id as PK
+        const payload = { user_id: created.user_id || created.users_id || created.id || created.userId || null, email: created.email, role: created.role || 'customer' };
     try {
       const orderObj = {
         user_id: userId,
@@ -262,7 +263,7 @@ router.post('/server/orders', upload.single('file'), async (req, res) => {
       if (itemErr || !itemInsert) {
         console.error('[ORDER] insert item error', itemErr)
         // cleanup: delete uploaded file and delete order
-        await supabase.storage.from(UPLOAD_BUCKET).remove([upData.path]).catch(() => {});
+          const payload = { user_id: data.user_id || data.users_id || data.id || data.userId || null, email: data.email, role: data.role || 'customer' };
         await supabase.from('orders').delete().eq('orders_id', orderInsert.orders_id).catch(() => {});
         return res.status(500).json({ error: 'Failed to create order item' });
       }
