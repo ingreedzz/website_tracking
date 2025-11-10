@@ -22,15 +22,15 @@
       </thead>
       <tbody>
         <tr v-if="orders.length === 0"><td colspan="9" class="p-6 text-center">No Order</td></tr>
-        <tr v-for="o in orders" :key="o.orders_id" class="hover:bg-gray-100 cursor-pointer" @click="goDetail(o.orders_id)">
-          <td class="px-2 py-2">{{ o.orders_id }}</td>
+        <tr v-for="o in orders" :key="o.id || o.orders_id" class="hover:bg-gray-100 cursor-pointer" @click="goDetail(o.id || o.orders_id)">
+          <td class="px-2 py-2">{{ o.id || o.orders_id }}</td>
           <td class="px-2 py-2">{{ o.user_id }}</td>
-          <td class="px-2 py-2">{{ ((o.order_items && o.order_items[0] && o.order_items[0].product_snapshot) || (o.item && o.item.product_snapshot) || {}).product || '-' }}</td>
-          <td class="px-2 py-2">{{ ((o.order_items && o.order_items[0] && o.order_items[0].product_snapshot) || (o.item && o.item.product_snapshot) || {}).model || '-' }}</td>
+          <td class="px-2 py-2">{{ o.product || '-' }}</td>
+          <td class="px-2 py-2">{{ o.model || '-' }}</td>
           <td class="px-2 py-2">{{ o.status }}</td>
-          <td class="px-2 py-2">{{ o.order_date }}</td>
+          <td class="px-2 py-2">{{ o.order_date ? new Date(o.order_date).toLocaleDateString() : '-' }}</td>
           <td class="px-2 py-2">{{ o.deadline || '-' }}</td>
-          <td class="px-2 py-2">{{ o.total }}</td>
+          <td class="px-2 py-2">{{ o.total || o.total_price || '-' }}</td>
           <td class="px-2 py-2">{{ o.payment_status || '-' }}</td>
         </tr>
       </tbody>
@@ -42,35 +42,48 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { getCurrentUser, clearToken } from '../lib/auth'
+import { apiGet } from '../lib/api'
 
 const orders = ref([])
 const router = useRouter()
 
 async function fetchOrders() {
+  console.log('[AdminDashboard] Fetching all orders...');
   try {
-    const resp = await fetch('/api/orders')
-    if (!resp.ok) throw new Error('Failed to fetch orders')
-    orders.value = await resp.json()
+    orders.value = await apiGet('/orders')
+    console.log('[AdminDashboard] Orders loaded:', orders.value.length);
   } catch (e) {
-    console.error('[admin] fetchOrders failed', e)
+    console.error('[AdminDashboard] fetchOrders failed', e)
+    alert('Failed to fetch orders: ' + (e.message || e))
   }
 }
 
 function goDetail(id) {
-  router.push({ name: 'AdminOrderDetail', params: { id } }).catch(() => {})
+  console.log('[AdminDashboard] Navigating to order detail:', id);
+  router.push({ name: 'AdminOrderDetail', params: { id } }).catch((err) => {
+    console.error('[AdminDashboard] Navigation failed:', err);
+  })
 }
 
 function logout() {
+  console.log('[AdminDashboard] Logging out...');
   clearToken()
   window.dispatchEvent(new Event('auth-change'))
   router.push({ name: 'Home' }).catch(() => {})
 }
 
-function refresh() { fetchOrders() }
+function refresh() { 
+  console.log('[AdminDashboard] Refreshing orders...');
+  fetchOrders() 
+}
 
 onMounted(() => {
+  console.log('[AdminDashboard] Component mounted');
   const user = getCurrentUser()
+  console.log('[AdminDashboard] Current user:', user ? { users_id: user.users_id, role: user.role } : null);
+  
   if (!user || user.role !== 'admin') {
+    console.log('[AdminDashboard] User is not admin, redirecting to home');
     router.push({ name: 'Home' }).catch(() => {})
     return
   }

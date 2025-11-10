@@ -63,7 +63,8 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { getCurrentUser } from '../lib/auth'
+import { getCurrentUser, getToken } from '../lib/auth'
+import { apiGet } from '../lib/api'
 
 const router = useRouter()
 const route = useRoute()
@@ -77,88 +78,142 @@ const sablonUrl = ref('')
 const selectedStatus = ref('')
 
 async function fetchOrder() {
+  console.log('[AdminOrderDetail] Fetching order:', id);
   try {
-    const resp = await fetch('/api/orders/' + id)
-    if (!resp.ok) throw new Error('Failed to load order')
-    const data = await resp.json()
+    const data = await apiGet('/orders/' + id)
+    console.log('[AdminOrderDetail] Order loaded:', data);
     order.value = data
-  selectedStatus.value = data.status || 'created'
-  // order_items may be embedded as an array by the API
-  const item = (data.order_items && data.order_items.length) ? data.order_items[0] : (data.item || null)
-  if (item && item.product_snapshot) itemSnapshot.value = item.product_snapshot
+    selectedStatus.value = data.status || 'created'
+    
+    // With normalized response, product info is already flattened
+    if (data.product) {
+      itemSnapshot.value = {
+        product: data.product,
+        model: data.model,
+        size: data.size,
+        color: data.color
+      }
+    } else {
+      // Fallback: check order_items array
+      const item = (data.order_items && data.order_items.length) ? data.order_items[0] : (data.item || null)
+      if (item && item.product_snapshot) itemSnapshot.value = item.product_snapshot
+    }
+    
     // fetch address (order_addresses) — simple query
     try {
-      const a = await fetch('/api/order_addresses?order_id=eq.' + id)
-      if (a.ok) {
-        const arr = await a.json()
-        address.value = Array.isArray(arr) && arr.length ? arr[0] : {}
-      }
-    } catch (e) {}
+      const arr = await apiGet('/order_addresses?order_id=' + id)
+      address.value = Array.isArray(arr) && arr.length ? arr[0] : {}
+      console.log('[AdminOrderDetail] Address loaded:', address.value);
+    } catch (e) {
+      console.warn('[AdminOrderDetail] Failed to load address:', e);
+    }
+    
     // try to fetch payment row
     try {
-      const p = await fetch('/api/payments?order_id=eq.' + id)
-      if (p.ok) { const arr = await p.json(); payment.value = Array.isArray(arr) && arr.length ? arr[0] : null }
-    } catch (e) {}
-    // build sablon public url if item includes sablon_path
-  if (item && item.sablon_path) {
-      try {
-        const pu = await fetch('/api/signed-url?sablon=' + encodeURIComponent(data.item.sablon_path))
-        // fallback: use relative public url
-      } catch (e) {}
-      sablonUrl.value = data.sablon_url || (item && item.sablon_path ? '/storage/' + item.sablon_path : '')
+      const arr = await apiGet('/payments?order_id=' + id)
+      payment.value = Array.isArray(arr) && arr.length ? arr[0] : null
+      console.log('[AdminOrderDetail] Payment loaded:', payment.value);
+    } catch (e) {
+      console.warn('[AdminOrderDetail] Failed to load payment:', e);
     }
+    
+    // Set sablon URL from normalized response or order_items
+    if (data.sablon_url) {
+      sablonUrl.value = data.sablon_url
+    } else if (data.sablon_path) {
+      sablonUrl.value = '/storage/' + data.sablon_path
+    } else {
+      const item = (data.order_items && data.order_items.length) ? data.order_items[0] : (data.item || null)
+      if (item && item.sablon_path) {
+        sablonUrl.value = '/storage/' + item.sablon_path
+      }
+    }
+    console.log('[AdminOrderDetail] Sablon URL:', sablonUrl.value);
   } catch (e) {
-    console.error('[admin] fetchOrder', e)
+    console.error('[AdminOrderDetail] fetchOrder failed', e)
+    alert('Failed to load order: ' + (e.message || e))
   }
 }
 
-function goBack() { router.push({ name: 'AdminDashboard' }).catch(() => {}) }
+function goBack() { 
+  console.log('[AdminOrderDetail] Going back to admin dashboard');
+  router.push({ name: 'AdminDashboard' }).catch(() => {}) 
+}
 
 async function updateStatus() {
+  console.log('[AdminOrderDetail] Updating status to:', selectedStatus.value);
   try {
-    const token = getCurrentUser() && localStorage.getItem('token')
+    const token = getToken()
     const resp = await fetch('/api/server/orders/' + id + '/status', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
       body: JSON.stringify({ status: selectedStatus.value })
     })
-    if (!resp.ok) { const t = await resp.text(); throw new Error(t || 'Failed to update') }
+    if (!resp.ok) { 
+      const t = await resp.text(); 
+      console.error('[AdminOrderDetail] Update status failed:', t);
+      throw new Error(t || 'Failed to update') 
+    }
+    console.log('[AdminOrderDetail] Status updated successfully');
     await fetchOrder()
     alert('Status updated')
-  } catch (e) { alert(e.message || String(e)) }
+  } catch (e) { 
+    console.error('[AdminOrderDetail] Update status error:', e);
+    alert(e.message || String(e)) 
+  }
 }
 
 async function markPaymentValid() {
+  console.log('[AdminOrderDetail] Marking payment as valid');
   try {
-    const token = getCurrentUser() && localStorage.getItem('token')
+    const token = getToken()
     const resp = await fetch('/api/server/orders/' + id + '/status', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
       body: JSON.stringify({ status: 'processing', payment_status: 'confirmed', note: 'Payment validated by admin' })
     })
-    if (!resp.ok) throw new Error('Failed to mark payment valid')
+    if (!resp.ok) {
+      console.error('[AdminOrderDetail] Mark payment valid failed');
+      throw new Error('Failed to mark payment valid')
+    }
+    console.log('[AdminOrderDetail] Payment marked as valid');
     await fetchOrder()
     alert('Payment marked as valid')
-  } catch (e) { alert(e.message || String(e)) }
+  } catch (e) { 
+    console.error('[AdminOrderDetail] Mark payment valid error:', e);
+    alert(e.message || String(e)) 
+  }
 }
 
 async function markPaymentInvalid() {
+  console.log('[AdminOrderDetail] Marking payment as invalid');
   try {
-    const token = getCurrentUser() && localStorage.getItem('token')
+    const token = getToken()
     const resp = await fetch('/api/server/orders/' + id + '/status', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
       body: JSON.stringify({ status: 'cancelled', payment_status: 'invalid', note: 'Payment marked invalid' })
     })
-    if (!resp.ok) throw new Error('Failed to mark payment invalid')
+    if (!resp.ok) {
+      console.error('[AdminOrderDetail] Mark payment invalid failed');
+      throw new Error('Failed to mark payment invalid')
+    }
+    console.log('[AdminOrderDetail] Payment marked as invalid');
     await fetchOrder()
     alert('Payment marked as invalid')
-  } catch (e) { alert(e.message || String(e)) }
+  } catch (e) { 
+    console.error('[AdminOrderDetail] Mark payment invalid error:', e);
+    alert(e.message || String(e)) 
+  }
 }
 
 onMounted(() => {
+  console.log('[AdminOrderDetail] Component mounted');
   const user = getCurrentUser()
+  console.log('[AdminOrderDetail] Current user:', user ? { users_id: user.users_id, role: user.role } : null);
+  
   if (!user || user.role !== 'admin') {
+    console.log('[AdminOrderDetail] User is not admin, redirecting to home');
     router.push({ name: 'Home' }).catch(() => {})
     return
   }
