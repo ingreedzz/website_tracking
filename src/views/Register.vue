@@ -36,9 +36,15 @@ export default {
           body: JSON.stringify({ name: this.form.name, email: this.form.email, password: this.form.password })
         })
         if (!resp.ok) {
+          // try JSON first, then text fallback so we surface server messages
           let eb = null
           try { eb = await resp.json() } catch (e) {}
-          throw new Error((eb && eb.error) ? eb.error : 'Registration failed')
+          if (eb && eb.error) throw new Error(eb.error)
+          try {
+            const txt = await resp.text()
+            if (txt) throw new Error(`Server ${resp.status}: ${txt}`)
+          } catch (e) {}
+          throw new Error('Registration failed (' + resp.status + ')')
         }
         const json = await resp.json()
         // Backend returns { user, token }
