@@ -184,37 +184,93 @@ router.get('/payments', async (req, res) => {
 
 // Create order (used by frontend: POST /api/server/orders)
 router.post('/server/orders', upload.single('file'), async (req, res) => {
+  console.log('[ORDER] === New order creation request ===');
+  console.log('[ORDER] Headers:', { 
+    'content-type': req.headers['content-type'],
+    'authorization': req.headers.authorization ? 'Bearer <present>' : 'missing'
+  });
+  console.log('[ORDER] Body fields:', Object.keys(req.body));
+  console.log('[ORDER] Body data:', req.body);
+  console.log('[ORDER] File:', req.file ? { 
+    fieldname: req.file.fieldname, 
+    originalname: req.file.originalname, 
+    mimetype: req.file.mimetype, 
+    size: req.file.size 
+  } : 'no file');
+  
   try {
     // authenticate
+    console.log('[ORDER] Step 1: Authenticating request...');
     const auth = req.headers.authorization || '';
     const m = auth.match(/^Bearer\s+(.*)$/i);
-    if (!m) return res.status(401).json({ error: 'Missing Authorization header' });
+    if (!m) {
+      console.error('[ORDER] Authentication failed: Missing Authorization header');
+      return res.status(401).json({ error: 'Missing Authorization header' });
+    }
     const token = m[1];
+    console.log('[ORDER] Token extracted, length:', token.length);
+    
     let payload = null;
-  try { payload = jwt.verify(token, JWT_SECRET); } catch (_e) { return res.status(401).json({ error: 'Invalid token' }); }
+    try { 
+      payload = jwt.verify(token, JWT_SECRET); 
+      console.log('[ORDER] Token verified successfully. Payload:', { 
+        user_id: payload.user_id, 
+        users_id: payload.users_id, 
+        email: payload.email, 
+        role: payload.role 
+      });
+    } catch (_e) { 
+      console.error('[ORDER] Token verification failed:', _e.message);
+      return res.status(401).json({ error: 'Invalid token' }); 
+    }
+    
     const userId = payload && (payload.user_id || payload.users_id || payload.id || payload.sub) ? (payload.user_id || payload.users_id || payload.id || payload.sub) : null;
-    if (!userId) return res.status(401).json({ error: 'Invalid token payload (no user id)' });
+    if (!userId) {
+      console.error('[ORDER] No user ID found in token payload:', payload);
+      return res.status(401).json({ error: 'Invalid token payload (no user id)' });
+    }
+    console.log('[ORDER] User ID extracted:', userId);
 
     // validate body
+    console.log('[ORDER] Step 2: Validating request body...');
     const { product, model, size, color, address, phone, quantity, unit_price, total_price, deadline, custom } = req.body;
-    if (!product || !model || !req.file) return res.status(400).json({ error: 'product, model and file are required' });
+    console.log('[ORDER] Extracted fields:', { product, model, size, color, quantity, unit_price, total_price });
+    
+    if (!product || !model || !req.file) {
+      console.error('[ORDER] Validation failed:', { 
+        hasProduct: !!product, 
+        hasModel: !!model, 
+        hasFile: !!req.file 
+      });
+      return res.status(400).json({ error: 'product, model and file are required' });
+    }
+    console.log('[ORDER] Validation passed');
 
     // upload file to Supabase Storage
+    console.log('[ORDER] Step 3: Uploading file to Supabase Storage...');
     const file = req.file;
     const ext = (file.originalname && file.originalname.split('.').pop()) || 'jpg';
     const path = `users/${userId}/sablons/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
     const contentType = file.mimetype || 'application/octet-stream';
+    console.log('[ORDER] Storage path:', path);
+    console.log('[ORDER] Content type:', contentType);
+    console.log('[ORDER] File buffer size:', file.buffer ? file.buffer.length : 0);
 
-    if (!supabase) return res.status(500).json({ error: 'Supabase client not initialized' });
+    if (!supabase) {
+      console.error('[ORDER] Supabase client not initialized!');
+      return res.status(500).json({ error: 'Supabase client not initialized' });
+    }
 
     const { data: upData, error: upErr } = await supabase.storage.from(UPLOAD_BUCKET).upload(path, file.buffer, { contentType });
     if (upErr) {
-      console.error('[ORDER] storage upload error', upErr)
+      console.error('[ORDER] Storage upload error:', upErr);
       return res.status(500).json({ error: 'Failed to upload file' });
     }
+    console.log('[ORDER] File uploaded successfully:', upData);
 
   // Prefer users_id (uuid) when present — some schemas use users_id as PK
     try {
+      console.log('[ORDER] Step 4: Creating order in database...');
       const orderObj = {
         user_id: userId,
         status: 'created',
@@ -224,15 +280,21 @@ router.post('/server/orders', upload.single('file'), async (req, res) => {
         deadline: deadline || null,
         payment_status: 'pending'
       };
+      console.log('[ORDER] Order object:', orderObj);
+      
       const { data: orderInsert, error: orderErr } = await supabase.from('orders').insert([orderObj]).select().maybeSingle();
       if (orderErr || !orderInsert) {
-        console.error('[ORDER] insert order error', orderErr)
+        console.error('[ORDER] Insert order error:', orderErr);
+        console.error('[ORDER] Order insert data:', orderInsert);
         // cleanup uploaded file
+        console.log('[ORDER] Cleaning up uploaded file:', upData.path);
         await supabase.storage.from(UPLOAD_BUCKET).remove([upData.path]).catch(() => {});
         return res.status(500).json({ error: 'Failed to create order' });
       }
+      console.log('[ORDER] Order created successfully:', { orders_id: orderInsert.orders_id });
 
       // optionally insert delivery/billing address
+      console.log('[ORDER] Step 5: Inserting order address (optional)...');
       try {
         if (address || phone) {
           const addrObj = {
@@ -240,14 +302,19 @@ router.post('/server/orders', upload.single('file'), async (req, res) => {
             address: address || null,
             phone: phone || null
           };
+          console.log('[ORDER] Address object:', addrObj);
           await supabase.from('order_addresses').insert([addrObj]).catch(() => {});
+          console.log('[ORDER] Address inserted successfully');
+        } else {
+          console.log('[ORDER] No address/phone provided, skipping');
         }
   } catch (_e) {
         // non-fatal: log but continue
-        console.warn('[ORDER] failed to insert order_addresses', e && e.message ? e.message : e);
+        console.warn('[ORDER] Failed to insert order_addresses:', _e && _e.message ? _e.message : _e);
       }
 
       // insert into order_items (lightweight snapshot)
+      console.log('[ORDER] Step 6: Creating order item...');
       const itemObj = {
         order_id: orderInsert.orders_id,
         product_snapshot: { product: product, model: model, size: size, color: color },
@@ -258,34 +325,53 @@ router.post('/server/orders', upload.single('file'), async (req, res) => {
         sablon_path: upData.path,
         color_id: null
       };
+      console.log('[ORDER] Item object:', itemObj);
+      
       const { data: itemInsert, error: itemErr } = await supabase.from('order_items').insert([itemObj]).select().maybeSingle();
       if (itemErr || !itemInsert) {
-        console.error('[ORDER] insert item error', itemErr)
+        console.error('[ORDER] Insert item error:', itemErr);
+        console.error('[ORDER] Item insert data:', itemInsert);
         // cleanup: delete uploaded file and delete order
+        console.log('[ORDER] Cleaning up: deleting order and file');
         await supabase.from('orders').delete().eq('orders_id', orderInsert.orders_id).catch(() => {});
         return res.status(500).json({ error: 'Failed to create order item' });
       }
+      console.log('[ORDER] Order item created successfully:', { order_items_id: itemInsert.order_items_id });
 
       // compute public URL (simple public URL; depending on bucket visibility)
+      console.log('[ORDER] Step 7: Getting public URL for uploaded file...');
       let publicUrl = null;
       try {
         const { data: pu } = supabase.storage.from(UPLOAD_BUCKET).getPublicUrl(upData.path);
         publicUrl = pu && pu.publicUrl ? pu.publicUrl : null;
-  } catch (_e) { /* ignore */ }
+        console.log('[ORDER] Public URL:', publicUrl);
+  } catch (_e) { 
+        console.warn('[ORDER] Failed to get public URL:', _e && _e.message ? _e.message : _e);
+      }
 
       // Return created order in a frontend-friendly shape (id field)
       const out = {
         order: Object.assign({}, orderInsert, { id: orderInsert.orders_id, sablon_path: upData.path, sablon_url: publicUrl, item: itemInsert })
       };
+      console.log('[ORDER] === Order creation successful ===');
+      console.log('[ORDER] Response:', { order_id: out.order.id, status: out.order.status });
       return res.status(201).json(out);
     } catch (err) {
-      console.error('[ORDER] unexpected error', err)
+      console.error('[ORDER] === Unexpected error in order creation ===');
+      console.error('[ORDER] Error name:', err.name);
+      console.error('[ORDER] Error message:', err.message);
+      console.error('[ORDER] Error stack:', err.stack);
       // cleanup upload
-      await supabase.storage.from(UPLOAD_BUCKET).remove([upData.path]).catch(() => {});
+      if (upData && upData.path) {
+        console.log('[ORDER] Cleaning up uploaded file:', upData.path);
+        await supabase.storage.from(UPLOAD_BUCKET).remove([upData.path]).catch(() => {});
+      }
       return res.status(500).json({ error: 'Server error' });
     }
   } catch (err) {
-    console.error('[server/orders] handler error', err)
+    console.error('[ORDER] === Handler-level error ===');
+    console.error('[ORDER] Error:', err);
+    console.error('[ORDER] Error stack:', err.stack);
     return res.status(500).json({ error: err.message || String(err) });
   }
 });
