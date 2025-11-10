@@ -270,72 +270,123 @@ export default {
     }
 
     async function handleCreate() {
+      console.log('[FRONTEND] === Starting order creation ===');
       try {
-        if (!userId.value) throw new Error('Not logged in')
+        if (!userId.value) {
+          console.error('[FRONTEND] User not logged in');
+          throw new Error('Not logged in');
+        }
+        console.log('[FRONTEND] User ID:', userId.value);
+        
         // require a sablon image
-        if (!fileRef.value) throw new Error('Sablon image is required')
+        if (!fileRef.value) {
+          console.error('[FRONTEND] No sablon image selected');
+          throw new Error('Sablon image is required');
+        }
+        console.log('[FRONTEND] Sablon file:', { 
+          name: fileRef.value.name, 
+          type: fileRef.value.type, 
+          size: fileRef.value.size 
+        });
 
         // get access token from our local storage (app-managed JWT), fall back to Supabase access token
-        let accessToken = getToken()
+        console.log('[FRONTEND] Getting access token...');
+        let accessToken = getToken();
         if (!accessToken) {
-          const sb = getSupabaseAccessToken()
-          if (sb) accessToken = sb
+          console.log('[FRONTEND] No app token, trying Supabase token...');
+          const sb = getSupabaseAccessToken();
+          if (sb) accessToken = sb;
         }
-        if (!accessToken) throw new Error('No access token available')
+        if (!accessToken) {
+          console.error('[FRONTEND] No access token available');
+          throw new Error('No access token available');
+        }
+        console.log('[FRONTEND] Access token obtained, length:', accessToken.length);
 
-        const fd = new FormData()
-        fd.append('product', form.product || '')
-        fd.append('model', form.model || '')
-        fd.append('size', form.size || '')
-        fd.append('color', form.color || '')
-        fd.append('address', form.address || '')
-        fd.append('phone', form.phone || '')
-  fd.append('quantity', String(form.quantity || 1))
-  const unitPrice = unitPriceForModel(form.model) || 0
-  const total = unitPrice * (Number(form.quantity || 1))
-  fd.append('unit_price', String(unitPrice))
-  fd.append('total_price', String(total))
-  fd.append('order_date', new Date().toISOString())
-  if (form.deadline) fd.append('deadline', form.deadline)
-  fd.append('payment_method', 'bank')
-  fd.append('custom', JSON.stringify(form.custom || {}))
-  if (fileRef.value) fd.append('file', fileRef.value)
+        const fd = new FormData();
+        fd.append('product', form.product || '');
+        fd.append('model', form.model || '');
+        fd.append('size', form.size || '');
+        fd.append('color', form.color || '');
+        fd.append('address', form.address || '');
+        fd.append('phone', form.phone || '');
+  fd.append('quantity', String(form.quantity || 1));
+  const unitPrice = unitPriceForModel(form.model) || 0;
+  const total = unitPrice * (Number(form.quantity || 1));
+  fd.append('unit_price', String(unitPrice));
+  fd.append('total_price', String(total));
+  fd.append('order_date', new Date().toISOString());
+  if (form.deadline) fd.append('deadline', form.deadline);
+  fd.append('payment_method', 'bank');
+  fd.append('custom', JSON.stringify(form.custom || {}));
+  if (fileRef.value) fd.append('file', fileRef.value);
 
+        console.log('[FRONTEND] Form data prepared:', {
+          product: form.product,
+          model: form.model,
+          size: form.size,
+          color: form.color,
+          quantity: form.quantity,
+          unit_price: unitPrice,
+          total_price: total,
+          hasFile: !!fileRef.value
+        });
+
+        console.log('[FRONTEND] Sending POST request to /api/server/orders...');
         const resp = await fetch('/api/server/orders', {
           method: 'POST',
           headers: {
             Authorization: 'Bearer ' + accessToken
           },
           body: fd
-        })
+        });
+        
+        console.log('[FRONTEND] Response status:', resp.status, resp.statusText);
+        
         if (!resp.ok) {
-          let errBody = null
-          try { errBody = await resp.json() } catch (e) { /* ignore */ }
-          throw new Error((errBody && errBody.error) ? errBody.error : 'Server error: ' + resp.status)
+          let errBody = null;
+          try { 
+            errBody = await resp.json();
+            console.error('[FRONTEND] Error response body:', errBody);
+          } catch (e) { 
+            console.error('[FRONTEND] Could not parse error response as JSON');
+          }
+          throw new Error((errBody && errBody.error) ? errBody.error : 'Server error: ' + resp.status);
         }
-        const json = await resp.json()
-        const created = json.order
+        
+        const json = await resp.json();
+        console.log('[FRONTEND] Success response:', json);
+        
+        const created = json.order;
         if (created) {
-          orders.value.unshift(created)
+          console.log('[FRONTEND] Order created:', { id: created.id, status: created.status });
+          orders.value.unshift(created);
           // preload public url for the newly created order's sablon image
-          try { await preloadPublicUrls([created]) } catch (e) { /* ignore */ }
+          try { await preloadPublicUrls([created]); } catch (e) { 
+            console.warn('[FRONTEND] Failed to preload public URL:', e);
+          }
         }
-        alert('Order created (server upload)')
+        alert('Order created (server upload)');
         // redirect user to payment page for this order so they can upload proof (SPA navigation)
         if (created && created.id) {
+          console.log('[FRONTEND] Redirecting to payment page for order:', created.id);
           try {
-            await router.push({ name: 'Payment', query: { order: created.id } })
+            await router.push({ name: 'Payment', query: { order: created.id } });
           } catch (e) {
-            console.warn('[handleCreate] router.push to Payment failed', e)
+            console.warn('[FRONTEND] router.push to Payment failed:', e);
           }
-          return
+          return;
         }
-        viewMode.value = 'list'
+        viewMode.value = 'list';
         // reset UI
-        resetForm()
+        resetForm();
+        console.log('[FRONTEND] === Order creation complete ===');
       } catch (err) {
-        console.error('[handleCreate] error', err)
-        alert(err.message || String(err))
+        console.error('[FRONTEND] === Order creation failed ===');
+        console.error('[FRONTEND] Error:', err);
+        console.error('[FRONTEND] Error message:', err.message);
+        console.error('[FRONTEND] Error stack:', err.stack);
+        alert(err.message || String(err));
       }
     }
 
