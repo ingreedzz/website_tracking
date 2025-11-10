@@ -17,6 +17,7 @@ This project uses an AI-optimized documentation system. **ALWAYS read these file
 - Development patterns & conventions
 - Tech stack & commands  
 - Code style guidelines
+- you are the expert not me
 
 ### 2. **PROGRESS.md** 📊
 - Project timeline & history
