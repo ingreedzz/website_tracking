@@ -55,5 +55,43 @@ export function decodeToken(token) {
 export function getCurrentUser() {
   const t = getToken()
   if (!t) return null
-  return decodeToken(t)
+  const decoded = decodeToken(t)
+  if (!decoded) return null
+  
+  // Check if token is expired
+  if (decoded.exp && decoded.exp * 1000 < Date.now()) {
+    console.log('[auth] token expired, clearing')
+    clearToken()
+    return null
+  }
+  
+  return decoded
+}
+
+// Check if token is about to expire (within 5 minutes)
+export function isTokenExpiringSoon() {
+  const t = getToken()
+  if (!t) return false
+  const decoded = decodeToken(t)
+  if (!decoded || !decoded.exp) return false
+  
+  const expiresIn = decoded.exp * 1000 - Date.now()
+  return expiresIn < 5 * 60 * 1000 // 5 minutes
+}
+
+// Handle auth error responses (e.g., from API calls)
+export function handleAuthError(error) {
+  if (error?.code === 'TOKEN_EXPIRED' || error?.message?.includes('Token expired')) {
+    console.log('[auth] token expired error, clearing token')
+    clearToken()
+    window.dispatchEvent(new Event('auth-change'))
+    return { expired: true }
+  }
+  if (error?.code === 'INVALID_TOKEN' || error?.message?.includes('Invalid token')) {
+    console.log('[auth] invalid token error, clearing token')
+    clearToken()
+    window.dispatchEvent(new Event('auth-change'))
+    return { invalid: true }
+  }
+  return { expired: false, invalid: false }
 }

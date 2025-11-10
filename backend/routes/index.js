@@ -4,6 +4,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const supabase = require('../supabaseClient');
+const { verifyToken, requireAdmin, optionalAuth } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -114,7 +115,7 @@ router.post('/login', async (req, res) => {
   }
 });
 
-router.get('/users', async (req, res) => {
+router.get('/users', verifyToken, requireAdmin, async (req, res) => {
   try {
     if (!REST_BASE) return res.status(500).json({ error: 'Supabase not configured' })
     const url = `${REST_BASE}/users?select=user_id,name,email,phone,role`;
@@ -126,7 +127,7 @@ router.get('/users', async (req, res) => {
   }
 });
 
-router.get('/orders', async (req, res) => {
+router.get('/orders', verifyToken, requireAdmin, async (req, res) => {
   try {
     if (!REST_BASE) return res.status(500).json({ error: 'Supabase not configured' })
     // include related order_items in the response for admin UI
@@ -139,16 +140,25 @@ router.get('/orders', async (req, res) => {
   }
 });
 
-router.get('/orders/:id', async (req, res) => {
+router.get('/orders/:id', verifyToken, async (req, res) => {
   try {
     const id = req.params.id;
     if (!id) return res.status(400).json({ error: 'order id required' });
     if (!REST_BASE) return res.status(500).json({ error: 'Supabase not configured' })
-  const url = `${REST_BASE}/orders?order_id=eq.${encodeURIComponent(id)}&select=*,order_items(*)`;
+    
+    // Users can only view their own orders, admins can view any
+    const url = `${REST_BASE}/orders?order_id=eq.${encodeURIComponent(id)}&select=*,order_items(*)`;
     const resp = await axios.get(url, { headers: SB_HEADERS });
     const rows = Array.isArray(resp.data) ? resp.data : [];
     if (!rows.length) return res.status(404).json({ error: 'Order not found' });
-    res.json(rows[0]);
+    
+    const order = rows[0];
+    // If not admin, verify the order belongs to the requesting user
+    if (!req.user.is_admin && order.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    
+    res.json(order);
   } catch (err) {
     console.error('[ORDERS/:id] axios error', err && err.response ? { status: err.response.status, data: err.response.data } : err.message)
     res.status(500).json({ error: err.message });
@@ -156,7 +166,7 @@ router.get('/orders/:id', async (req, res) => {
 });
 
 // Simple proxy endpoints for order_addresses and payments for admin UI
-router.get('/order_addresses', async (req, res) => {
+router.get('/order_addresses', verifyToken, requireAdmin, async (req, res) => {
   try {
     const q = req.query || {}
     let query = supabase.from('order_addresses').select('*')
@@ -169,7 +179,7 @@ router.get('/order_addresses', async (req, res) => {
   }
 })
 
-router.get('/payments', async (req, res) => {
+router.get('/payments', verifyToken, requireAdmin, async (req, res) => {
   try {
     const q = req.query || {}
     let query = supabase.from('payments').select('*')
@@ -183,17 +193,10 @@ router.get('/payments', async (req, res) => {
 })
 
 // Create order (used by frontend: POST /api/server/orders)
-router.post('/server/orders', upload.single('file'), async (req, res) => {
+router.post('/server/orders', verifyToken, upload.single('file'), async (req, res) => {
   try {
-    // authenticate
-    const auth = req.headers.authorization || '';
-    const m = auth.match(/^Bearer\s+(.*)$/i);
-    if (!m) return res.status(401).json({ error: 'Missing Authorization header' });
-    const token = m[1];
-    let payload = null;
-  try { payload = jwt.verify(token, JWT_SECRET); } catch (_e) { return res.status(401).json({ error: 'Invalid token' }); }
-    const userId = payload && (payload.user_id || payload.users_id || payload.id || payload.sub) ? (payload.user_id || payload.users_id || payload.id || payload.sub) : null;
-    if (!userId) return res.status(401).json({ error: 'Invalid token payload (no user id)' });
+    // req.user is populated by verifyToken middleware
+    const userId = req.user.id;
 
     // validate body
     const { product, model, size, color, address, phone, quantity, unit_price, total_price, deadline, custom } = req.body;
@@ -291,17 +294,10 @@ router.post('/server/orders', upload.single('file'), async (req, res) => {
 });
 
 // Upload payment proof and create a payments row
-router.post('/server/orders/:id/payment', upload.single('file'), async (req, res) => {
+router.post('/server/orders/:id/payment', verifyToken, upload.single('file'), async (req, res) => {
   try {
-    // authenticate
-    const auth = req.headers.authorization || '';
-    const m = auth.match(/^Bearer\s+(.*)$/i);
-    if (!m) return res.status(401).json({ error: 'Missing Authorization header' });
-    const token = m[1];
-    let payload = null;
-  try { payload = jwt.verify(token, JWT_SECRET); } catch (_e) { return res.status(401).json({ error: 'Invalid token' }); }
-    const userId = payload && (payload.user_id || payload.users_id || payload.id || payload.sub) ? (payload.user_id || payload.users_id || payload.id || payload.sub) : null;
-    if (!userId) return res.status(401).json({ error: 'Invalid token payload (no user id)' });
+    // req.user is populated by verifyToken middleware
+    const userId = req.user.id;
 
     const orderId = req.params.id;
     if (!orderId) return res.status(400).json({ error: 'order id required' });
@@ -358,19 +354,10 @@ router.post('/server/orders/:id/payment', upload.single('file'), async (req, res
 });
 
 // Update order status and record history (admin only)
-router.put('/server/orders/:id/status', async (req, res) => {
+router.put('/server/orders/:id/status', verifyToken, requireAdmin, async (req, res) => {
   try {
-    const auth = req.headers.authorization || '';
-    const m = auth.match(/^Bearer\s+(.*)$/i);
-    if (!m) return res.status(401).json({ error: 'Missing Authorization header' });
-    const token = m[1];
-    let payload = null;
-  try { payload = jwt.verify(token, JWT_SECRET); } catch (_e) { return res.status(401).json({ error: 'Invalid token' }); }
-    const userId = payload && (payload.user_id || payload.users_id || payload.id || payload.sub) ? (payload.user_id || payload.users_id || payload.id || payload.sub) : null;
-    const role = payload && payload.role ? payload.role : 'customer';
-    if (!userId) return res.status(401).json({ error: 'Invalid token payload (no user id)' });
-
-    if (role !== 'admin') return res.status(403).json({ error: 'Admin role required' });
+    // req.user is populated by verifyToken middleware and requireAdmin ensures admin role
+    const userId = req.user.id;
 
     const orderId = req.params.id;
     const { status, note } = req.body;
