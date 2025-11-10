@@ -19,15 +19,18 @@
 </template>
 
 <script>
-import { ref } from 'vue'
-import { setToken, decodeToken } from '../lib/auth'
+import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { setToken, decodeToken, getCurrentUser } from '../lib/auth'
 export default {
   name: 'Login',
   setup() {
     const email = ref('')
     const password = ref('')
 
-    async function login() {
+  const router = useRouter()
+
+  async function login() {
       try {
         const resp = await fetch('/api/login', {
           method: 'POST',
@@ -48,28 +51,33 @@ export default {
   const json = await resp.json()
   // Backend returns { user, token }
   const token = json.token
-  if (token) setToken(token)
-  else throw new Error('No token returned')
+  if (token) {
+    setToken(token)
+    // notify other parts of the app (Navbar) that auth changed
+    window.dispatchEvent(new Event('auth-change'))
+  } else throw new Error('No token returned')
 
   const payload = decodeToken(token)
   const emailStr = (json.user && json.user.email) || (payload && payload.email) || ''
   const role = (payload && (payload.role || (payload.is_admin ? 'admin' : null))) || (json.user && json.user.role) || 'customer'
   alert('Logged in: ' + (emailStr || '') + ' (role: ' + role + ')')
-  window.location.href = '/dashboard'
+  // use router to navigate inside the SPA (prevent pushing the user to another deploy host)
+  try {
+    await router.push({ name: 'Dashboard' })
+  } catch (e) {
+    // fallback to location change on error
+    window.location.href = '/dashboard'
+  }
       } catch (err) {
         alert(err.message || String(err))
       }
     }
     // redirect if already logged in
-    try {
-      const { onMounted } = require('vue')
-      onMounted(() => {
-        const { getCurrentUser } = require('../lib/auth')
-        if (getCurrentUser()) {
-          window.location.href = '/dashboard'
-        }
-      })
-    } catch (e) {}
+    onMounted(() => {
+      if (getCurrentUser()) {
+        try { router.push({ name: 'Dashboard' }) } catch (e) { window.location.href = '/dashboard' }
+      }
+    })
 
     return { email, password, login }
   }
