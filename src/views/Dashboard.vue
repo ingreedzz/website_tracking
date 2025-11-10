@@ -145,6 +145,7 @@ import { ref, onMounted, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase, getProfile } from '../lib/supabase'
 import { getCurrentUser, getToken, decodeToken, clearToken, getSupabaseAccessToken } from '../lib/auth'
+import { apiGet, apiPostFormData } from '../lib/api'
 
 export default {
   name: 'Dashboard',
@@ -213,8 +214,8 @@ export default {
         loading.value = false
         return
       }
-      // token payload may have different property names for id (user_id, sub, or id)
-  const uid = payload.users_id || payload.user_id || payload.sub || payload.id || null
+      // Use users_id from token
+      const uid = payload.users_id || null
       if (!uid) {
         loading.value = false
         return
@@ -223,22 +224,12 @@ export default {
       // prefer the role from token; fallback to profiles table
       isAdmin.value = payload.is_admin || payload.role === 'admin'
 
-      const token = getToken()
-      if (!token) {
-        loading.value = false
-        return
-      }
-
-      if (isAdmin.value) {
-        // Admin: fetch all orders
-        const resp = await fetch('/api/orders', { headers: { 'Authorization': `Bearer ${token}` } })
-        if (!resp.ok) throw new Error('Failed to fetch orders')
-        orders.value = await resp.json()
-      } else {
-        // User: fetch own orders
-        const resp = await fetch('/api/orders', { headers: { 'Authorization': `Bearer ${token}` } })
-        if (!resp.ok) throw new Error('Failed to fetch orders')
-        orders.value = await resp.json()
+      try {
+        // Use API helper for authenticated request
+        orders.value = await apiGet('/orders')
+      } catch (err) {
+        console.error('[load] Failed to fetch orders', err)
+        alert(err.message || 'Failed to load orders')
       }
       loading.value = false
     }
@@ -275,14 +266,6 @@ export default {
         // require a sablon image
         if (!fileRef.value) throw new Error('Sablon image is required')
 
-        // get access token from our local storage (app-managed JWT), fall back to Supabase access token
-        let accessToken = getToken()
-        if (!accessToken) {
-          const sb = getSupabaseAccessToken()
-          if (sb) accessToken = sb
-        }
-        if (!accessToken) throw new Error('No access token available')
-
         const fd = new FormData()
         fd.append('product', form.product || '')
         fd.append('model', form.model || '')
@@ -290,30 +273,19 @@ export default {
         fd.append('color', form.color || '')
         fd.append('address', form.address || '')
         fd.append('phone', form.phone || '')
-  fd.append('quantity', String(form.quantity || 1))
-  const unitPrice = unitPriceForModel(form.model) || 0
-  const total = unitPrice * (Number(form.quantity || 1))
-  fd.append('unit_price', String(unitPrice))
-  fd.append('total_price', String(total))
-  fd.append('order_date', new Date().toISOString())
-  if (form.deadline) fd.append('deadline', form.deadline)
-  fd.append('payment_method', 'bank')
-  fd.append('custom', JSON.stringify(form.custom || {}))
-  if (fileRef.value) fd.append('file', fileRef.value)
+        fd.append('quantity', String(form.quantity || 1))
+        const unitPrice = unitPriceForModel(form.model) || 0
+        const total = unitPrice * (Number(form.quantity || 1))
+        fd.append('unit_price', String(unitPrice))
+        fd.append('total_price', String(total))
+        fd.append('order_date', new Date().toISOString())
+        if (form.deadline) fd.append('deadline', form.deadline)
+        fd.append('payment_method', 'bank')
+        fd.append('custom', JSON.stringify(form.custom || {}))
+        if (fileRef.value) fd.append('file', fileRef.value)
 
-        const resp = await fetch('/api/server/orders', {
-          method: 'POST',
-          headers: {
-            Authorization: 'Bearer ' + accessToken
-          },
-          body: fd
-        })
-        if (!resp.ok) {
-          let errBody = null
-          try { errBody = await resp.json() } catch (e) { /* ignore */ }
-          throw new Error((errBody && errBody.error) ? errBody.error : 'Server error: ' + resp.status)
-        }
-        const json = await resp.json()
+        // Use API helper for authenticated request
+        const json = await apiPostFormData('/server/orders', fd)
         const created = json.order
         if (created) {
           orders.value.unshift(created)

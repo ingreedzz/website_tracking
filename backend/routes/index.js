@@ -4,6 +4,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const supabase = require('../supabaseClient');
+const { verifyToken, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -62,9 +63,12 @@ router.post('/register', async (req, res) => {
       if (!created) return res.status(500).json({ error: 'Failed to create user' });
       if (created.password) delete created.password;
 
-      // Sign a JWT for the created user
-  // include possible PK names (users_id, user_id, id) to ensure token contains an identifier
-  const payload = { user_id: created.users_id || created.user_id || created.id || created.userId || null, users_id: created.users_id || created.user_id || created.id || created.userId || null, email: created.email, role: created.role || 'customer' };
+      // Sign a JWT for the created user - use only users_id
+      const payload = { 
+        users_id: created.users_id, 
+        email: created.email, 
+        role: created.role || 'customer' 
+      };
       const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
 
       res.status(201).json({ user: created, token });
@@ -100,9 +104,12 @@ router.post('/login', async (req, res) => {
       const match = await bcrypt.compare(password, data.password || '');
       if (!match) return res.status(401).json({ error: 'Invalid credentials' });
       delete data.password;
-      // Sign a JWT and return with user
-  // include both user_id and users_id to be compatible with different DB PK names
-  const payload = { user_id: data.users_id || data.user_id || data.id || data.userId || null, users_id: data.users_id || data.user_id || data.id || data.userId || null, email: data.email, role: data.role || 'customer' };
+      // Sign a JWT and return with user - use only users_id
+      const payload = { 
+        users_id: data.users_id, 
+        email: data.email, 
+        role: data.role || 'customer' 
+      };
       const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
       res.json({ user: data, token });
     } catch (err) {
@@ -114,10 +121,10 @@ router.post('/login', async (req, res) => {
   }
 });
 
-router.get('/users', async (req, res) => {
+router.get('/users', verifyToken, requireAdmin, async (req, res) => {
   try {
     if (!REST_BASE) return res.status(500).json({ error: 'Supabase not configured' })
-    const url = `${REST_BASE}/users?select=user_id,name,email,phone,role`;
+    const url = `${REST_BASE}/users?select=users_id,name,email,phone,role`;
     const resp = await axios.get(url, { headers: SB_HEADERS });
     res.json(Array.isArray(resp.data) ? resp.data : []);
   } catch (err) {
@@ -126,7 +133,7 @@ router.get('/users', async (req, res) => {
   }
 });
 
-router.get('/orders', async (req, res) => {
+router.get('/orders', verifyToken, requireAdmin, async (req, res) => {
   try {
     if (!REST_BASE) return res.status(500).json({ error: 'Supabase not configured' })
     // include related order_items in the response for admin UI
@@ -139,16 +146,23 @@ router.get('/orders', async (req, res) => {
   }
 });
 
-router.get('/orders/:id', async (req, res) => {
+router.get('/orders/:id', verifyToken, async (req, res) => {
   try {
     const id = req.params.id;
     if (!id) return res.status(400).json({ error: 'order id required' });
     if (!REST_BASE) return res.status(500).json({ error: 'Supabase not configured' })
-  const url = `${REST_BASE}/orders?order_id=eq.${encodeURIComponent(id)}&select=*,order_items(*)`;
+    const url = `${REST_BASE}/orders?orders_id=eq.${encodeURIComponent(id)}&select=*,order_items(*)`;
     const resp = await axios.get(url, { headers: SB_HEADERS });
     const rows = Array.isArray(resp.data) ? resp.data : [];
     if (!rows.length) return res.status(404).json({ error: 'Order not found' });
-    res.json(rows[0]);
+    
+    // Ownership check: users can only access their own orders unless admin
+    const order = rows[0];
+    if (req.user.role !== 'admin' && order.user_id !== req.user.users_id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    
+    res.json(order);
   } catch (err) {
     console.error('[ORDERS/:id] axios error', err && err.response ? { status: err.response.status, data: err.response.data } : err.message)
     res.status(500).json({ error: err.message });
@@ -156,7 +170,7 @@ router.get('/orders/:id', async (req, res) => {
 });
 
 // Simple proxy endpoints for order_addresses and payments for admin UI
-router.get('/order_addresses', async (req, res) => {
+router.get('/order_addresses', verifyToken, requireAdmin, async (req, res) => {
   try {
     const q = req.query || {}
     let query = supabase.from('order_addresses').select('*')
@@ -169,7 +183,7 @@ router.get('/order_addresses', async (req, res) => {
   }
 })
 
-router.get('/payments', async (req, res) => {
+router.get('/payments', verifyToken, requireAdmin, async (req, res) => {
   try {
     const q = req.query || {}
     let query = supabase.from('payments').select('*')
@@ -183,17 +197,10 @@ router.get('/payments', async (req, res) => {
 })
 
 // Create order (used by frontend: POST /api/server/orders)
-router.post('/server/orders', upload.single('file'), async (req, res) => {
+router.post('/server/orders', verifyToken, upload.single('file'), async (req, res) => {
   try {
-    // authenticate
-    const auth = req.headers.authorization || '';
-    const m = auth.match(/^Bearer\s+(.*)$/i);
-    if (!m) return res.status(401).json({ error: 'Missing Authorization header' });
-    const token = m[1];
-    let payload = null;
-  try { payload = jwt.verify(token, JWT_SECRET); } catch (_e) { return res.status(401).json({ error: 'Invalid token' }); }
-    const userId = payload && (payload.user_id || payload.users_id || payload.id || payload.sub) ? (payload.user_id || payload.users_id || payload.id || payload.sub) : null;
-    if (!userId) return res.status(401).json({ error: 'Invalid token payload (no user id)' });
+    // User is already authenticated via middleware
+    const userId = req.user.users_id;
 
     // validate body
     const { product, model, size, color, address, phone, quantity, unit_price, total_price, deadline, custom } = req.body;
@@ -213,7 +220,6 @@ router.post('/server/orders', upload.single('file'), async (req, res) => {
       return res.status(500).json({ error: 'Failed to upload file' });
     }
 
-  // Prefer users_id (uuid) when present — some schemas use users_id as PK
     try {
       const orderObj = {
         user_id: userId,
@@ -242,9 +248,9 @@ router.post('/server/orders', upload.single('file'), async (req, res) => {
           };
           await supabase.from('order_addresses').insert([addrObj]).catch(() => {});
         }
-  } catch (_e) {
+      } catch (_e) {
         // non-fatal: log but continue
-        console.warn('[ORDER] failed to insert order_addresses', e && e.message ? e.message : e);
+        console.warn('[ORDER] failed to insert order_addresses', _e && _e.message ? _e.message : _e);
       }
 
       // insert into order_items (lightweight snapshot)
@@ -271,7 +277,7 @@ router.post('/server/orders', upload.single('file'), async (req, res) => {
       try {
         const { data: pu } = supabase.storage.from(UPLOAD_BUCKET).getPublicUrl(upData.path);
         publicUrl = pu && pu.publicUrl ? pu.publicUrl : null;
-  } catch (_e) { /* ignore */ }
+      } catch (_e) { /* ignore */ }
 
       // Return created order in a frontend-friendly shape (id field)
       const out = {
@@ -291,17 +297,10 @@ router.post('/server/orders', upload.single('file'), async (req, res) => {
 });
 
 // Upload payment proof and create a payments row
-router.post('/server/orders/:id/payment', upload.single('file'), async (req, res) => {
+router.post('/server/orders/:id/payment', verifyToken, upload.single('file'), async (req, res) => {
   try {
-    // authenticate
-    const auth = req.headers.authorization || '';
-    const m = auth.match(/^Bearer\s+(.*)$/i);
-    if (!m) return res.status(401).json({ error: 'Missing Authorization header' });
-    const token = m[1];
-    let payload = null;
-  try { payload = jwt.verify(token, JWT_SECRET); } catch (_e) { return res.status(401).json({ error: 'Invalid token' }); }
-    const userId = payload && (payload.user_id || payload.users_id || payload.id || payload.sub) ? (payload.user_id || payload.users_id || payload.id || payload.sub) : null;
-    if (!userId) return res.status(401).json({ error: 'Invalid token payload (no user id)' });
+    // User is already authenticated via middleware
+    const userId = req.user.users_id;
 
     const orderId = req.params.id;
     if (!orderId) return res.status(400).json({ error: 'order id required' });
@@ -358,19 +357,10 @@ router.post('/server/orders/:id/payment', upload.single('file'), async (req, res
 });
 
 // Update order status and record history (admin only)
-router.put('/server/orders/:id/status', async (req, res) => {
+router.put('/server/orders/:id/status', verifyToken, requireAdmin, async (req, res) => {
   try {
-    const auth = req.headers.authorization || '';
-    const m = auth.match(/^Bearer\s+(.*)$/i);
-    if (!m) return res.status(401).json({ error: 'Missing Authorization header' });
-    const token = m[1];
-    let payload = null;
-  try { payload = jwt.verify(token, JWT_SECRET); } catch (_e) { return res.status(401).json({ error: 'Invalid token' }); }
-    const userId = payload && (payload.user_id || payload.users_id || payload.id || payload.sub) ? (payload.user_id || payload.users_id || payload.id || payload.sub) : null;
-    const role = payload && payload.role ? payload.role : 'customer';
-    if (!userId) return res.status(401).json({ error: 'Invalid token payload (no user id)' });
-
-    if (role !== 'admin') return res.status(403).json({ error: 'Admin role required' });
+    // User is already authenticated via middleware
+    const userId = req.user.users_id;
 
     const orderId = req.params.id;
     const { status, note } = req.body;
@@ -408,7 +398,7 @@ router.put('/server/orders/:id/status', async (req, res) => {
       if (req.body && req.body.payment_status) {
         await supabase.from('payments').update({ status: req.body.payment_status }).eq('order_id', orderId).catch(() => {});
       }
-  } catch (_e) { /* non-fatal */ }
+    } catch (_e) { /* non-fatal */ }
 
     return res.json({ order: updatedOrder, history: histIns || null });
   } catch (err) {
