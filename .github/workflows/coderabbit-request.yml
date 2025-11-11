@@ -1,0 +1,97 @@
+name: CodeRabbit Delegated Review Trigger
+
+on:
+  pull_request:
+    types: [opened, reopened]
+  pull_request_target:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: 'PR number to request review for (optional when running for current event)'
+        required: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  request-review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository (for reading config)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Evaluate config and (if allowed) post CodeRabbit comment
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const path = 'coderabbit.config.json';
+            let cfg = {};
+            try {
+              if (fs.existsSync(path)) {
+                cfg = JSON.parse(fs.readFileSync(path, 'utf8'));
+              }
+            } catch (err) {
+              console.log('Failed to read config, proceeding with defaults', err.message);
+            }
+
+            const reviewsCfg = cfg.reviews || {};
+            const delegated = cfg.delegated_agent || {};
+            const allowBot = !!reviewsCfg.allow_bot_prs;
+            const autoOpen = !!reviewsCfg.auto_review_on_pr_open;
+            const requiredLabel = delegated.require_label || 'coderabbit-review';
+
+            const eventName = context.eventName;
+            let prNumber = context.issue.number || parseInt(process.env.INPUT_PR || process.env.PR, 10);
+
+            if (eventName === 'workflow_dispatch') {
+              // allow manual invocation with pr input
+              if (!prNumber) {
+                console.log('No PR provided to workflow_dispatch; nothing to do.');
+                return;
+              }
+            }
+
+            if (eventName === 'pull_request') {
+              if (!autoOpen) {
+                console.log('auto_review_on_pr_open is false; skipping automatic review on PR open.');
+                return;
+              }
+            } else if (eventName === 'pull_request_target') {
+              const labelName = context.payload.label && context.payload.label.name;
+              if (!labelName || labelName !== requiredLabel) {
+                console.log(`Label event does not match required label (${requiredLabel}); skipping.`);
+                return;
+              }
+            }
+
+            // If PR number still not detected, try to extract from payload
+            if (!prNumber && context.payload && context.payload.pull_request) {
+              prNumber = context.payload.pull_request.number;
+            }
+
+            if (!prNumber) {
+              console.log('Unable to determine PR number; exiting.');
+              return;
+            }
+
+            // Check PR author type when present
+            const prAuthorType = context.payload && context.payload.pull_request && context.payload.pull_request.user && context.payload.pull_request.user.type;
+            if (prAuthorType === 'Bot' && !allowBot) {
+              console.log('PR author is a bot and allow_bot_prs is false in config; skipping.');
+              return;
+            }
+
+            const body = '@coderabbitai review';
+            console.log(`Posting CodeRabbit review request on PR #${prNumber}`);
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body
+            });
