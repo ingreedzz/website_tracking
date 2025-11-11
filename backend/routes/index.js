@@ -134,22 +134,68 @@ router.get('/users', verifyToken, requireAdmin, async (req, res) => {
 });
 
 router.get('/orders', verifyToken, requireAdmin, async (req, res) => {
-  console.log('[GET /orders] Fetching all orders for admin');
+  console.log('[GET /orders] === Fetching all orders for admin ===');
+  console.log('[GET /orders] Timestamp:', new Date().toISOString());
   const requestUserId = req.user?.users_id || req.user?.user_id || null;
   const requestUserRole = req.user?.role || null;
-  console.log('[GET /orders] User:', { users_id: requestUserId, role: requestUserRole });
+  console.log('[GET /orders] Admin user:', { users_id: requestUserId, role: requestUserRole });
+  
   try {
-    if (!REST_BASE) return res.status(500).json({ error: 'Supabase not configured' })
-    // include related order_items in the response for admin UI
-    const url = `${REST_BASE}/orders?select=*,order_items(*)`;
-    console.log('[GET /orders] Fetching from Supabase:', url);
-    const resp = await axios.get(url, { headers: SB_HEADERS });
-    const orders = Array.isArray(resp.data) ? resp.data : [];
-    console.log('[GET /orders] Retrieved orders:', orders.length);
+    // Step 1: Validate Supabase configuration
+    if (!REST_BASE) {
+      console.error('[GET /orders] ❌ REST_BASE not configured');
+      return res.status(500).json({ error: 'Supabase not configured' });
+    }
     
-    // Normalize response: add 'id' field and flatten order_items data
+    // Step 2: Fetch orders with related data
+    console.log('[GET /orders] Step 1: Fetching orders with order_items');
+    // Include order_items and user information via REST API
+    const url = `${REST_BASE}/orders?select=*,order_items(*)`;
+    console.log('[GET /orders] Query URL:', url);
+    
+    const resp = await axios.get(url, { 
+      headers: SB_HEADERS,
+      timeout: 15000 // 15 second timeout for admin queries
+    });
+    
+    const orders = Array.isArray(resp.data) ? resp.data : [];
+    console.log('[GET /orders] ✓ Retrieved', orders.length, 'orders from database');
+    
+    // Step 3: Fetch user information for all orders
+    console.log('[GET /orders] Step 2: Fetching user information');
+    const userIds = [...new Set(orders.map(o => o.user_id).filter(Boolean))];
+    console.log('[GET /orders] Found', userIds.length, 'unique user IDs');
+    
+    let users = {};
+    if (userIds.length > 0) {
+      try {
+        // Fetch users in bulk
+        const usersUrl = `${REST_BASE}/users?select=users_id,name,email,phone&users_id=in.(${userIds.join(',')})`;
+        const usersResp = await axios.get(usersUrl, { 
+          headers: SB_HEADERS,
+          timeout: 5000
+        });
+        
+        const usersArray = Array.isArray(usersResp.data) ? usersResp.data : [];
+        console.log('[GET /orders] ✓ Retrieved', usersArray.length, 'user records');
+        
+        // Create a lookup map
+        usersArray.forEach(user => {
+          users[user.users_id] = user;
+        });
+      } catch (userErr) {
+        console.warn('[GET /orders] ⚠️  Failed to fetch users:', userErr.message);
+        // Continue without user data
+      }
+    }
+    
+    // Step 4: Normalize response data
+    console.log('[GET /orders] Step 3: Normalizing order data');
     const normalized = orders.map(order => {
       const firstItem = order.order_items && order.order_items.length > 0 ? order.order_items[0] : null;
+      
+      // Get user info
+      const user = users[order.user_id];
       
       // Generate public URL for sablon image if path exists
       let sablonUrl = null;
@@ -158,31 +204,53 @@ router.get('/orders', verifyToken, requireAdmin, async (req, res) => {
           const { data: pu } = supabase.storage.from(UPLOAD_BUCKET).getPublicUrl(firstItem.sablon_path);
           sablonUrl = pu?.publicUrl || null;
         } catch (e) {
-          console.warn('[GET /orders] Failed to get public URL for:', firstItem.sablon_path);
+          console.warn('[GET /orders] ⚠️  Failed to get public URL for:', firstItem.sablon_path);
         }
       }
+      
+      // Extract product info with fallbacks
+      const productSnapshot = firstItem?.product_snapshot || {};
       
       return {
         ...order,
         id: order.orders_id, // Add id field for frontend compatibility
-        product: firstItem?.product_snapshot?.product || null,
-        model: firstItem?.product_snapshot?.model || null,
-        size: firstItem?.product_snapshot?.size || null,
-        color: firstItem?.product_snapshot?.color || null,
-        quantity: firstItem?.quantity || null,
-        unit_price: firstItem?.unit_price || null,
-        total_price: order.total || null,
+        // User information
+        user_name: user?.name || 'Unknown Customer',
+        user_email: user?.email || '',
+        user_phone: user?.phone || '',
+        // Product information
+        product: productSnapshot.product || 'Unknown Product',
+        model: productSnapshot.model || 'N/A',
+        size: productSnapshot.size || 'N/A',
+        color: productSnapshot.color || 'N/A',
+        quantity: firstItem?.quantity || 0,
+        unit_price: firstItem?.unit_price || 0,
+        total_price: order.total || 0,
         sablon_path: firstItem?.sablon_path || null,
         sablon_url: sablonUrl,
         custom: firstItem?.customization || {}
       };
     });
     
-    console.log('[GET /orders] Normalized orders:', normalized.length);
+    console.log('[GET /orders] ✓ Normalized', normalized.length, 'orders successfully');
+    console.log('[GET /orders] === Admin orders fetch complete ===');
+    
     res.json(normalized);
+    
   } catch (err) {
-    console.error('[ORDERS] axios error', err && err.response ? { status: err.response.status, data: err.response.data } : err.message)
-    res.status(500).json({ error: err.message });
+    console.error('[GET /orders] === Fatal error ===');
+    console.error('[GET /orders] Error name:', err.name);
+    console.error('[GET /orders] Error message:', err.message);
+    
+    if (err.response) {
+      console.error('[GET /orders] Response status:', err.response.status);
+      console.error('[GET /orders] Response data:', JSON.stringify(err.response.data));
+    }
+    
+    res.status(500).json({ 
+      error: 'Failed to fetch orders',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   }
 });
 
@@ -446,15 +514,78 @@ router.get('/order_addresses', verifyToken, requireAdmin, async (req, res) => {
 })
 
 router.get('/payments', verifyToken, requireAdmin, async (req, res) => {
+  console.log('[GET /payments] === Fetching payments for admin ===');
+  console.log('[GET /payments] Timestamp:', new Date().toISOString());
+  
   try {
-    const q = req.query || {}
-    let query = supabase.from('payments').select('*')
-    if (q.order_id) query = query.eq('order_id', q.order_id)
-    const { data, error } = await query
-    if (error) return res.status(500).json({ error: error.message || error })
-    res.json(Array.isArray(data) ? data : [])
+    const q = req.query || {};
+    console.log('[GET /payments] Query params:', q);
+    
+    // Fetch payments with order and order_items information
+    let query = supabase
+      .from('payments')
+      .select(`
+        *,
+        orders:order_id (
+          orders_id,
+          user_id,
+          total,
+          status,
+          payment_status,
+          created_at,
+          order_items (
+            product_snapshot,
+            quantity,
+            unit_price
+          )
+        )
+      `);
+    
+    if (q.order_id) {
+      query = query.eq('order_id', q.order_id);
+      console.log('[GET /payments] Filtering by order_id:', q.order_id);
+    }
+    
+    const { data, error } = await query;
+    
+    if (error) {
+      console.error('[GET /payments] ❌ Database error:', error);
+      return res.status(500).json({ error: error.message || error });
+    }
+    
+    const payments = Array.isArray(data) ? data : [];
+    console.log('[GET /payments] Retrieved', payments.length, 'payment records');
+    
+    // Normalize payments to include product information
+    const normalized = payments.map(payment => {
+      const order = payment.orders;
+      const firstItem = order?.order_items?.[0];
+      const productSnapshot = firstItem?.product_snapshot || {};
+      
+      return {
+        ...payment,
+        // Add order summary for easier display
+        order_summary: {
+          order_id: order?.orders_id || payment.order_id,
+          product: productSnapshot.product || 'Unknown Product',
+          model: productSnapshot.model || 'N/A',
+          quantity: firstItem?.quantity || 0,
+          total: order?.total || payment.amount || 0,
+          order_status: order?.status || 'unknown',
+          payment_status: order?.payment_status || 'unknown'
+        }
+      };
+    });
+    
+    console.log('[GET /payments] Normalized', normalized.length, 'payment records');
+    console.log('[GET /payments] === Fetch complete ===');
+    
+    res.json(normalized);
   } catch (err) {
-    res.status(500).json({ error: err.message })
+    console.error('[GET /payments] === Fatal error ===');
+    console.error('[GET /payments] Error:', err.message);
+    console.error('[GET /payments] Stack:', err.stack);
+    res.status(500).json({ error: err.message });
   }
 })
 

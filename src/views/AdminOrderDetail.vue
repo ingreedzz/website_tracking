@@ -41,7 +41,15 @@
         <div class="mt-4">
           <strong>Payment</strong>
           <div>Payment status: {{ order.payment_status || '-' }}</div>
-          <div v-if="payment">Payment amount: {{ payment.amount }} - status: {{ payment.status }}</div>
+          <div v-if="payment">
+            <div>Payment amount: Rp {{ formatPrice(payment.amount) }}</div>
+            <div>Payment status: {{ payment.status }}</div>
+            <div v-if="payment.order_summary">
+              <div class="text-sm text-gray-600 mt-1">
+                For: {{ payment.order_summary.product }} ({{ payment.order_summary.model }})
+              </div>
+            </div>
+          </div>
           <div class="mt-2">
             <button @click="markPaymentValid" class="px-3 py-2 bg-green-600 text-white rounded mr-2">Mark Payment Valid</button>
             <button @click="markPaymentInvalid" class="px-3 py-2 bg-red-600 text-white rounded">Mark Payment Invalid</button>
@@ -76,6 +84,15 @@ const address = ref({})
 const payment = ref(null)
 const sablonUrl = ref('')
 const selectedStatus = ref('')
+
+function formatPrice(price) {
+  if (!price || isNaN(price)) return '0';
+  try {
+    return Number(price).toLocaleString('id-ID');
+  } catch (e) {
+    return String(price);
+  }
+}
 
 async function fetchOrder() {
   console.log('[AdminOrderDetail] Fetching order:', id);
