@@ -2,7 +2,7 @@
   "#": "CodeRabbit configuration - controlled by repository. Do NOT store secrets here.",
   "reviews": {
     "review_status": true,
-    "auto_review_on_pr_open": false,
+  "auto_review_on_pr_open": true,
     "allow_bot_prs": true,
     "allowed_labels": ["coderabbit-review"],
     "comment_on_complete": true
