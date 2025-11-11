@@ -1,3 +1,10 @@
+### November 11, 2025 - Added enhanced request tracing
+
+- Added enhanced request tracing middleware in `backend/server.js` to assign a per-request id (X-Request-Id / generated UUID), log request START with method, path, auth presence and content-length, and log request END with HTTP status and duration (ms). This improves ability to correlate logs in Render and Vercel and helps debug intermittent production issues.
+- Reminder: per workflow, I reviewed `AGENTS.md`, `technical_overview.md`, and existing `PROGRESS.md` before making changes.
+
+Status: committed and pushed on branch `copilot/add-debug-logs-and-fix-issues`.
+
 # 📊 Project Progress Report
 
 ## 🎨 Project: website_tracking

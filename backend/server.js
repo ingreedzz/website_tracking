@@ -33,9 +33,22 @@ async function initializeDatabase() {
 app.use(cors());
 app.use(express.json());
 
-// Simple request logger to help debugging in Vercel function logs
+// Enhanced request tracing middleware: assigns a request id, logs start and finish with timing
+const { randomUUID } = require('crypto');
 app.use((req, res, next) => {
-    console.log(`[HTTP] ${req.method} ${req.originalUrl}`);
+    const rid = (req.headers['x-request-id'] || randomUUID());
+    req.id = rid;
+    const start = Date.now();
+    const authPresent = req.headers.authorization ? 'yes' : 'no';
+    const contentLength = req.headers['content-length'] || 'unknown';
+    console.log(`[REQ:${rid}] START ${req.method} ${req.originalUrl} auth=${authPresent} content-length=${contentLength}`);
+
+    // capture response finish to log duration and status
+    res.on('finish', () => {
+        const dur = Date.now() - start;
+        console.log(`[REQ:${rid}] END ${res.statusCode} ${req.method} ${req.originalUrl} duration=${dur}ms`);
+    });
+
     next();
 });
 
