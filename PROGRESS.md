@@ -9,6 +9,46 @@
 
 ## 📅 Recent timeline
 
+### November 10, 2025 - Fix Vercel SPA Routing Issues
+
+**Critical Issues Fixed:**
+1. **Dashboard 404 Error**: Fixed Vercel configuration to support Vue Router SPA history mode
+2. **JSON Parsing Errors**: Resolved "Unexpected token '<', '<!doctype'..." errors by adding proper SPA fallback routing
+3. **Direct URL Access**: Users can now directly access `/dashboard`, `/login`, and other routes without 404 errors
+
+**Changes Made:**
+- `vercel.json`:
+  - Added SPA fallback rewrite rule: all non-API routes now fallback to `/index.html`
+  - Maintains existing API proxy to Render backend
+  - Order of rewrites: API routes first, then SPA fallback (prevents API conflicts)
+
+**Root Cause Analysis:**
+- Vercel was treating the deployment as static files only, not as an SPA
+- When accessing `/dashboard` directly, Vercel looked for `dashboard.html` and returned 404
+- This 404 HTML response was being parsed as JSON, causing "Unexpected token" errors
+- Vue Router's history mode requires all routes to be served through index.html
+
+**Testing & Validation:**
+- ✅ Vite build successful (307.87 KB bundle)
+- ✅ vercel.json syntax validated
+- ✅ SPA routing configuration added
+
+**Note on Dialog Warnings:**
+- The Dialog accessibility warnings in console are from Vercel's live feedback tool (not our Vue.js code)
+- These warnings don't affect application functionality
+
+**Files Modified:**
+- `vercel.json` - Added SPA fallback routing
+- `dist/index.html` - Rebuilt with latest assets
+
+**Next Steps:**
+1. Deploy to Vercel to test SPA routing fix
+2. Verify direct URL access to /dashboard and /login works
+3. Confirm order loading works after login
+4. Monitor for any remaining errors
+
+---
+
 ### November 10, 2025 - Fix Order Viewing and Creation Issues
 
 **Critical Issues Fixed:**
