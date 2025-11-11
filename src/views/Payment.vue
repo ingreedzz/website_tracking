@@ -8,7 +8,6 @@
               <div class="text-sm font-semibold mb-2">Payment Method</div>
               <select v-model="method" class="w-full border rounded px-3 py-2">
                 <option value="bank">Bank Transfer</option>
-                <option value="cod">Cash on Delivery</option>
               </select>
             </div>
             <div>
@@ -79,7 +78,8 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { supabase } from '../lib/supabase'
-import { getToken, getCurrentUser } from '../lib/auth'
+import { getToken, getCurrentUser, decodeToken } from '../lib/auth'
+import { apiGet } from '../lib/api'
 
 // payment page constants (store bank details) — change to your real store info
 const STORE_BANK = {
@@ -147,39 +147,85 @@ function onFileChange(e) {
 }
 
 async function submitPayment() {
+  console.log('[PAYMENT] === Starting payment proof upload ===');
   try {
     uploading.value = true
     const token = getToken()
-    if (!token) throw new Error('You must be logged in to submit payment proof')
-    if (!file.value) throw new Error('Please choose an image file to upload')
-    if (!orderId.value) throw new Error('Please select an order to attach this proof to')
+    if (!token) {
+      console.error('[PAYMENT] No auth token found');
+      throw new Error('You must be logged in to submit payment proof');
+    }
+    
+    if (!file.value) {
+      console.error('[PAYMENT] No file selected');
+      throw new Error('Please choose an image file to upload');
+    }
+    
+    if (!orderId.value) {
+      console.error('[PAYMENT] No order selected');
+      throw new Error('Please select an order to attach this proof to');
+    }
+    
     // prevent double submissions for already-paid orders
     if (selectedOrder.value && (selectedOrder.value.payment_status === 'paid' || selectedOrder.value.payment_proof_path || selectedOrder.value.payment_proof_url)) {
-      throw new Error('This order already has a payment proof or is marked paid')
+      console.error('[PAYMENT] Order already has payment proof');
+      throw new Error('This order already has a payment proof or is marked paid');
     }
+    
+    console.log('[PAYMENT] Preparing form data...');
+    console.log('[PAYMENT]   Order ID:', orderId.value);
+    console.log('[PAYMENT]   File name:', file.value.name);
+    console.log('[PAYMENT]   File size:', file.value.size);
+    console.log('[PAYMENT]   Payment method:', method.value);
 
     // send the file to server endpoint which will upload and update the order row
     const fd = new FormData()
     fd.append('file', file.value)
     fd.append('payment_method', method.value || 'bank')
+    
+    // Include amount from selected order
+    if (selectedOrder.value && selectedOrder.value.total_price) {
+      fd.append('amount', selectedOrder.value.total_price)
+      console.log('[PAYMENT]   Amount:', selectedOrder.value.total_price);
+    }
+    
+    if (note.value) {
+      fd.append('notes', note.value)
+      console.log('[PAYMENT]   Notes:', note.value);
+    }
 
+    console.log('[PAYMENT] Sending POST /server/orders/:id/payment...');
     const resp = await fetch(`/api/server/orders/${orderId.value}/payment`, {
       method: 'POST',
       headers: { Authorization: 'Bearer ' + token },
       body: fd
     })
+    
+    console.log('[PAYMENT] Response status:', resp.status);
+    
     if (!resp.ok) {
       let eb = null
       try { eb = await resp.json() } catch (e) {}
+      console.error('[PAYMENT] Upload failed:', eb);
       throw new Error((eb && eb.error) ? eb.error : 'Upload failed: ' + resp.status)
     }
+    
     const json = await resp.json()
-  uploadedUrl.value = json.order?.payment_proof_url || json.order?.payment_proof_path || ''
+    console.log('[PAYMENT] Upload successful:', json);
+    
+    uploadedUrl.value = json.order?.payment_proof_url || json.order?.payment_proof_path || ''
+    console.log('[PAYMENT] Payment proof URL:', uploadedUrl.value);
+    
     // refresh order list
+    console.log('[PAYMENT] Refreshing order list...');
     await loadOrders()
+    
+    console.log('[PAYMENT] === Payment proof upload complete ===');
     alert('Payment proof uploaded and attached to order')
   } catch (err) {
-    console.error('[payment] upload error', err)
+    console.error('[PAYMENT] === Upload error ===');
+    console.error('[PAYMENT] Error:', err);
+    console.error('[PAYMENT] Error message:', err.message);
     alert(err.message || String(err))
   } finally {
     uploading.value = false
@@ -187,19 +233,41 @@ async function submitPayment() {
 }
 
 async function loadOrders() {
+  console.log('[PAYMENT] === Loading orders ===');
   try {
     const token = getToken()
-    if (!token) return
-    const resp = await fetch('/api/orders', {
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`)
-    const data = await resp.json()
+    if (!token) {
+      console.log('[PAYMENT] No auth token, skipping load');
+      return;
+    }
+    
+    // Determine user role to use correct endpoint
+    const user = getCurrentUser() || decodeToken(token);
+    const isAdmin = user?.is_admin || user?.role === 'admin';
+    const endpoint = isAdmin ? '/orders' : '/user/orders';
+    
+    console.log('[PAYMENT] User role:', { isAdmin: isAdmin });
+    console.log('[PAYMENT] Using endpoint:', endpoint);
+    
+    // Use API helper for authenticated request
+    const data = await apiGet(endpoint);
     orders.value = data || []
+    
+    console.log('[PAYMENT] Orders loaded:', orders.value.length);
+    if (orders.value.length > 0) {
+      console.log('[PAYMENT] First order sample:', {
+        id: orders.value[0].id,
+        product: orders.value[0].product,
+        total_price: orders.value[0].total_price,
+        payment_status: orders.value[0].payment_status
+      });
+    }
   } catch (e) {
-    console.error('[payment] load orders error', e)
+    console.error('[PAYMENT] Load orders error:', e);
+    console.error('[PAYMENT] Error message:', e.message);
     orders.value = []
   }
+  console.log('[PAYMENT] === Load complete ===');
 }
 
 function resetForm() {
@@ -211,10 +279,14 @@ function resetForm() {
 }
 
 onMounted(() => {
+  console.log('[PAYMENT] Component mounted');
   // preload orders and pick order from query if present
   loadOrders()
   const q = route.query?.order || route.query?.id
-  if (q) orderId.value = String(q)
+  if (q) {
+    orderId.value = String(q)
+    console.log('[PAYMENT] Pre-selected order from query:', orderId.value);
+  }
 })
 </script>
 
