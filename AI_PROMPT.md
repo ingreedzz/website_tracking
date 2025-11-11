@@ -16,6 +16,127 @@ You are working on **website_tracking** - A modern web application
 
 ---
 
+## Supabase Database Structure
+-- WARNING: This schema is for context only and is not meant to be run.
+-- Table order and constraints may not be valid for execution.
+
+CREATE TABLE public.colors (
+  color_id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  name text NOT NULL UNIQUE,
+  hex text,
+  CONSTRAINT colors_pkey PRIMARY KEY (color_id)
+);
+CREATE TABLE public.models (
+  models_id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  name text NOT NULL UNIQUE,
+  description text,
+  CONSTRAINT models_pkey PRIMARY KEY (models_id)
+);
+CREATE TABLE public.order_addresses (
+  order_address_id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  order_id uuid,
+  address text,
+  phone text,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT order_addresses_pkey PRIMARY KEY (order_address_id),
+  CONSTRAINT order_addresses_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(orders_id)
+);
+CREATE TABLE public.order_items (
+  items_id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  order_id uuid,
+  variant_id uuid,
+  product_snapshot jsonb NOT NULL DEFAULT '{}'::jsonb,
+  quantity integer NOT NULL DEFAULT 1,
+  unit_price numeric NOT NULL DEFAULT 0,
+  customization jsonb DEFAULT '{}'::jsonb,
+  calculated_price numeric NOT NULL DEFAULT 0,
+  is_delivered boolean DEFAULT false,
+  received_date timestamp with time zone,
+  delivered_date timestamp with time zone,
+  sablon_path text,
+  color_id uuid,
+  CONSTRAINT order_items_pkey PRIMARY KEY (items_id),
+  CONSTRAINT order_items_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(orders_id),
+  CONSTRAINT order_items_variant_id_fkey FOREIGN KEY (variant_id) REFERENCES public.product_variants(variants_id),
+  CONSTRAINT order_items_color_id_fkey FOREIGN KEY (color_id) REFERENCES public.colors(color_id)
+);
+CREATE TABLE public.order_status_history (
+  order_status_history_id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  order_id uuid,
+  old_status text,
+  new_status text,
+  changed_by uuid,
+  note text,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT order_status_history_pkey PRIMARY KEY (order_status_history_id),
+  CONSTRAINT order_status_history_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(orders_id),
+  CONSTRAINT order_status_history_changed_by_fkey FOREIGN KEY (changed_by) REFERENCES public.users(users_id)
+);
+CREATE TABLE public.orders (
+  orders_id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  user_id uuid,
+  status text DEFAULT 'pending'::text,
+  total numeric DEFAULT 0,
+  notes text,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  order_date timestamp with time zone DEFAULT now(),
+  deadline date,
+  payment_status text,
+  CONSTRAINT orders_pkey PRIMARY KEY (orders_id),
+  CONSTRAINT orders_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(users_id)
+);
+CREATE TABLE public.payments (
+  payment_id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  order_id uuid,
+  amount numeric NOT NULL,
+  method text,
+  status text DEFAULT 'pending'::text,
+  proof_url text,
+  notes text,
+  created_at timestamp with time zone DEFAULT now(),
+  confirmed_at timestamp with time zone,
+  CONSTRAINT payments_pkey PRIMARY KEY (payment_id),
+  CONSTRAINT payments_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(orders_id)
+);
+CREATE TABLE public.product_variants (
+  variants_id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  product_id uuid,
+  model_id uuid,
+  color_id uuid,
+  sku text UNIQUE,
+  price numeric NOT NULL DEFAULT 0,
+  stock integer,
+  attributes jsonb DEFAULT '{}'::jsonb,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT product_variants_pkey PRIMARY KEY (variants_id),
+  CONSTRAINT product_variants_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(products_id),
+  CONSTRAINT product_variants_model_id_fkey FOREIGN KEY (model_id) REFERENCES public.models(models_id),
+  CONSTRAINT product_variants_color_id_fkey FOREIGN KEY (color_id) REFERENCES public.colors(color_id)
+);
+CREATE TABLE public.products (
+  products_id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  sku text UNIQUE,
+  name text NOT NULL,
+  description text,
+  product_type text,
+  base_price numeric DEFAULT 0,
+  active boolean DEFAULT true,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT products_pkey PRIMARY KEY (products_id)
+);
+CREATE TABLE public.users (
+  users_id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  email text NOT NULL UNIQUE,
+  password text NOT NULL,
+  name text,
+  phone text,
+  role text DEFAULT 'customer'::text,
+  is_admin boolean DEFAULT false,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT users_pkey PRIMARY KEY (users_id)
+);
+
 ## AI Memory System
 
 This project uses a **3-file memory system** to give you perfect context and memory across all sessions.
