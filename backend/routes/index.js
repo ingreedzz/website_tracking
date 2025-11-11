@@ -312,139 +312,228 @@ router.get('/payments', verifyToken, requireAdmin, async (req, res) => {
 
 // Create order (used by frontend: POST /api/server/orders)
 router.post('/server/orders', verifyToken, upload.single('file'), async (req, res) => {
-  console.log('[ORDER] === New order creation request ===');
-  console.log('[ORDER] Timestamp:', new Date().toISOString());
-  console.log('[ORDER] Headers:', { 
-    'content-type': req.headers['content-type'],
-    'authorization': req.headers.authorization ? 'Bearer <present>' : 'missing'
-  });
-  console.log('[ORDER] Body fields:', Object.keys(req.body));
-  console.log('[ORDER] Body data:', JSON.stringify(req.body, null, 2));
-  console.log('[ORDER] File:', req.file ? { 
-    fieldname: req.file.fieldname, 
-    originalname: req.file.originalname, 
-    mimetype: req.file.mimetype, 
-    size: req.file.size 
-  } : 'no file');
-  console.log('[ORDER] User from token:', req.user ? JSON.stringify(req.user, null, 2) : 'no user');
+  const requestId = req.id || 'unknown';
+  const orderStartTime = Date.now();
+  
+  console.log(`[REQ:${requestId}] [ORDER] ${'='.repeat(60)}`);
+  console.log(`[REQ:${requestId}] [ORDER] === New Order Creation Request ===`);
+  console.log(`[REQ:${requestId}] [ORDER] Timestamp: ${new Date().toISOString()}`);
+  console.log(`[REQ:${requestId}] [ORDER] ${'='.repeat(60)}`);
+  
+  console.log(`[REQ:${requestId}] [ORDER] Request Details:`);
+  console.log(`[REQ:${requestId}] [ORDER]   Content-Type: ${req.headers['content-type']}`);
+  console.log(`[REQ:${requestId}] [ORDER]   Content-Length: ${req.headers['content-length'] || 'unknown'}`);
+  console.log(`[REQ:${requestId}] [ORDER]   Authorization: ${req.headers.authorization ? 'Bearer <present>' : 'missing'}`);
+  console.log(`[REQ:${requestId}] [ORDER]   User-Agent: ${(req.headers['user-agent'] || 'unknown').substring(0, 50)}`);
+  
+  console.log(`[REQ:${requestId}] [ORDER] Body Fields:`, Object.keys(req.body));
+  console.log(`[REQ:${requestId}] [ORDER] Body Data:`, JSON.stringify(req.body, null, 2));
+  
+  if (req.file) {
+    console.log(`[REQ:${requestId}] [ORDER] File Uploaded:`);
+    console.log(`[REQ:${requestId}] [ORDER]   Field Name: ${req.file.fieldname}`);
+    console.log(`[REQ:${requestId}] [ORDER]   Original Name: ${req.file.originalname}`);
+    console.log(`[REQ:${requestId}] [ORDER]   MIME Type: ${req.file.mimetype}`);
+    console.log(`[REQ:${requestId}] [ORDER]   Size: ${req.file.size} bytes (${(req.file.size / 1024).toFixed(2)} KB)`);
+    console.log(`[REQ:${requestId}] [ORDER]   Encoding: ${req.file.encoding || 'not set'}`);
+    console.log(`[REQ:${requestId}] [ORDER]   Buffer Available: ${!!req.file.buffer}`);
+  } else {
+    console.log(`[REQ:${requestId}] [ORDER] File: NO FILE UPLOADED`);
+  }
+  
+  if (req.user) {
+    console.log(`[REQ:${requestId}] [ORDER] User from Token:`);
+    console.log(`[REQ:${requestId}] [ORDER]   User ID: ${req.user.users_id || req.user.user_id || 'not found'}`);
+    console.log(`[REQ:${requestId}] [ORDER]   Email: ${req.user.email || 'not set'}`);
+    console.log(`[REQ:${requestId}] [ORDER]   Role: ${req.user.role || 'not set'}`);
+  } else {
+    console.error(`[REQ:${requestId}] [ORDER] User: NO USER ON REQUEST`);
+  }
 
   try {
     // User is already authenticated via middleware
-    console.log('[ORDER] Step 1: Validating authentication...');
+    console.log(`[REQ:${requestId}] [ORDER] ${'─'.repeat(60)}`);
+    console.log(`[REQ:${requestId}] [ORDER] STEP 1: VALIDATING AUTHENTICATION`);
+    console.log(`[REQ:${requestId}] [ORDER] ${'─'.repeat(60)}`);
+    
+    const step1Start = Date.now();
     const userId = req.user && req.user.users_id ? req.user.users_id : (req.user && req.user.user_id ? req.user.user_id : null);
-    console.log('[ORDER] Authenticated userId:', userId);
+    
+    console.log(`[REQ:${requestId}] [ORDER] Extracted User ID: ${userId || 'NULL'}`);
+    console.log(`[REQ:${requestId}] [ORDER] req.user structure:`, JSON.stringify(req.user, null, 2));
+    
     if (!userId) {
-      console.error('[ORDER] ERROR: No user id available on req.user');
-      console.error('[ORDER] req.user contents:', req.user);
+      console.error(`[REQ:${requestId}] [ORDER] ❌ ERROR: No user ID available`);
+      console.error(`[REQ:${requestId}] [ORDER] Available fields on req.user:`, Object.keys(req.user || {}));
       return res.status(401).json({ 
         error: 'Authentication required',
-        details: 'User ID not found in token'
+        details: 'User ID not found in token',
+        code: 'MISSING_USER_ID'
       });
     }
-    console.log('[ORDER] ✓ Authentication validated');
+    
+    const step1Duration = Date.now() - step1Start;
+    console.log(`[REQ:${requestId}] [ORDER] ✓ Authentication validated (${step1Duration}ms)`);
 
     // validate body
-    console.log('[ORDER] Step 2: Validating request body...');
+    console.log(`[REQ:${requestId}] [ORDER] ${'─'.repeat(60)}`);
+    console.log(`[REQ:${requestId}] [ORDER] STEP 2: VALIDATING REQUEST BODY`);
+    console.log(`[REQ:${requestId}] [ORDER] ${'─'.repeat(60)}`);
+    
+    const step2Start = Date.now();
     const { product, model, size, color, address, phone, quantity, unit_price, total_price, deadline, custom } = req.body;
-    console.log('[ORDER] Extracted fields:', { 
-      product, 
-      model, 
-      size, 
-      color, 
-      quantity, 
-      unit_price, 
-      total_price,
-      hasCustom: !!custom,
-      customType: typeof custom,
-      customValue: custom
-    });
+    
+    console.log(`[REQ:${requestId}] [ORDER] Extracted Fields:`);
+    console.log(`[REQ:${requestId}] [ORDER]   product: ${product || 'MISSING'}`);
+    console.log(`[REQ:${requestId}] [ORDER]   model: ${model || 'MISSING'}`);
+    console.log(`[REQ:${requestId}] [ORDER]   size: ${size || 'not set'}`);
+    console.log(`[REQ:${requestId}] [ORDER]   color: ${color || 'not set'}`);
+    console.log(`[REQ:${requestId}] [ORDER]   quantity: ${quantity || 'not set'}`);
+    console.log(`[REQ:${requestId}] [ORDER]   unit_price: ${unit_price || 'not set'}`);
+    console.log(`[REQ:${requestId}] [ORDER]   total_price: ${total_price || 'not set'}`);
+    console.log(`[REQ:${requestId}] [ORDER]   deadline: ${deadline || 'not set'}`);
+    console.log(`[REQ:${requestId}] [ORDER]   custom: ${custom ? `present (type: ${typeof custom})` : 'not set'}`);
+    console.log(`[REQ:${requestId}] [ORDER]   address: ${address || 'not set'}`);
+    console.log(`[REQ:${requestId}] [ORDER]   phone: ${phone || 'not set'}`);
     
     if (!product || !model || !req.file) {
-      console.error('[ORDER] ERROR: Validation failed:', { 
-        hasProduct: !!product, 
-        hasModel: !!model, 
-        hasFile: !!req.file 
-      });
+      console.error(`[REQ:${requestId}] [ORDER] ❌ ERROR: Validation failed`);
+      console.error(`[REQ:${requestId}] [ORDER]   product: ${product ? 'PRESENT' : 'MISSING'}`);
+      console.error(`[REQ:${requestId}] [ORDER]   model: ${model ? 'PRESENT' : 'MISSING'}`);
+      console.error(`[REQ:${requestId}] [ORDER]   file: ${req.file ? 'PRESENT' : 'MISSING'}`);
+      
       return res.status(400).json({ 
         error: 'product, model and file are required',
         details: {
           product: product ? 'present' : 'missing',
           model: model ? 'present' : 'missing',
           file: req.file ? 'present' : 'missing'
-        }
+        },
+        code: 'VALIDATION_ERROR'
       });
     }
-    console.log('[ORDER] ✓ Validation passed');
+    
+    const step2Duration = Date.now() - step2Start;
+    console.log(`[REQ:${requestId}] [ORDER] ✓ Validation passed (${step2Duration}ms)`);
 
     // upload file to Supabase Storage
-    console.log('[ORDER] Step 3: Uploading file to Supabase Storage...');
+    console.log(`[REQ:${requestId}] [ORDER] ${'─'.repeat(60)}`);
+    console.log(`[REQ:${requestId}] [ORDER] STEP 3: UPLOADING FILE TO SUPABASE STORAGE`);
+    console.log(`[REQ:${requestId}] [ORDER] ${'─'.repeat(60)}`);
+    
+    const step3Start = Date.now();
     const file = req.file;
     const ext = (file.originalname && file.originalname.split('.').pop()) || 'jpg';
     const path = `users/${userId}/sablons/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
     const contentType = file.mimetype || 'application/octet-stream';
-    console.log('[ORDER] Storage path:', path);
-    console.log('[ORDER] Content type:', contentType);
-    console.log('[ORDER] File buffer size:', file.buffer ? file.buffer.length : 0);
-    console.log('[ORDER] Supabase client initialized:', !!supabase);
-    console.log('[ORDER] Upload bucket:', UPLOAD_BUCKET);
+    
+    console.log(`[REQ:${requestId}] [ORDER] File Upload Details:`);
+    console.log(`[REQ:${requestId}] [ORDER]   Storage Path: ${path}`);
+    console.log(`[REQ:${requestId}] [ORDER]   Content-Type: ${contentType}`);
+    console.log(`[REQ:${requestId}] [ORDER]   File Extension: ${ext}`);
+    console.log(`[REQ:${requestId}] [ORDER]   Original Filename: ${file.originalname}`);
+    console.log(`[REQ:${requestId}] [ORDER]   Buffer Size: ${file.buffer ? file.buffer.length : 0} bytes`);
+    console.log(`[REQ:${requestId}] [ORDER]   Upload Bucket: ${UPLOAD_BUCKET}`);
+    console.log(`[REQ:${requestId}] [ORDER]   Supabase Client: ${supabase ? 'INITIALIZED' : 'NOT INITIALIZED'}`);
 
     if (!supabase) {
-      console.error('[ORDER] ERROR: Supabase client not initialized!');
-      console.error('[ORDER] Environment variables:', {
-        hasSupabaseUrl: !!process.env.SUPABASE_URL || !!process.env.VITE_SUPABASE_URL,
-        hasSupabaseKey: !!process.env.SUPABASE_KEY || !!process.env.VITE_SUPABASE_ANON_KEY
+      console.error(`[REQ:${requestId}] [ORDER] ❌ ERROR: Supabase client not initialized`);
+      console.error(`[REQ:${requestId}] [ORDER] Environment Check:`, {
+        SUPABASE_URL: !!process.env.SUPABASE_URL,
+        VITE_SUPABASE_URL: !!process.env.VITE_SUPABASE_URL,
+        SUPABASE_KEY: !!process.env.SUPABASE_KEY,
+        VITE_SUPABASE_ANON_KEY: !!process.env.VITE_SUPABASE_ANON_KEY
       });
+      
       return res.status(500).json({ 
         error: 'Database connection not available',
-        details: 'Supabase client not initialized. Check environment variables.'
+        details: 'Supabase client not initialized. Check environment variables.',
+        code: 'DB_NOT_INITIALIZED'
       });
     }
-
+    
+    console.log(`[REQ:${requestId}] [ORDER] Attempting file upload to Supabase Storage...`);
+    const uploadStart = Date.now();
+    
     const { data: upData, error: upErr } = await supabase.storage.from(UPLOAD_BUCKET).upload(path, file.buffer, { contentType });
+    
+    const uploadDuration = Date.now() - uploadStart;
+    
     if (upErr) {
-      console.error('[ORDER] ERROR: Storage upload failed');
-      console.error('[ORDER] Storage error:', JSON.stringify(upErr, null, 2));
-      console.error('[ORDER] Storage error details:', {
-        message: upErr.message,
-        statusCode: upErr.statusCode,
-        error: upErr.error
-      });
+      console.error(`[REQ:${requestId}] [ORDER] ❌ ERROR: Storage upload failed after ${uploadDuration}ms`);
+      console.error(`[REQ:${requestId}] [ORDER] Error Type: ${upErr.name || 'Unknown'}`);
+      console.error(`[REQ:${requestId}] [ORDER] Error Message: ${upErr.message}`);
+      console.error(`[REQ:${requestId}] [ORDER] Status Code: ${upErr.statusCode || 'not set'}`);
+      console.error(`[REQ:${requestId}] [ORDER] Error Code: ${upErr.error || upErr.code || 'not set'}`);
+      console.error(`[REQ:${requestId}] [ORDER] Full Error:`, JSON.stringify(upErr, null, 2));
+      
       return res.status(500).json({ 
         error: 'Failed to upload file',
-        details: upErr.message || 'Storage upload error'
+        details: upErr.message || 'Storage upload error',
+        code: 'STORAGE_UPLOAD_ERROR'
       });
     }
-    console.log('[ORDER] ✓ File uploaded successfully:', upData);
+    
+    console.log(`[REQ:${requestId}] [ORDER] ✓ File uploaded successfully (${uploadDuration}ms)`);
+    console.log(`[REQ:${requestId}] [ORDER] Upload Result:`);
+    console.log(`[REQ:${requestId}] [ORDER]   Path: ${upData.path}`);
+    console.log(`[REQ:${requestId}] [ORDER]   ID: ${upData.id || 'not set'}`);
+    console.log(`[REQ:${requestId}] [ORDER]   Full Path: ${upData.fullPath || 'not set'}`);
+    
+    const step3Duration = Date.now() - step3Start;
+    console.log(`[REQ:${requestId}] [ORDER] ✓ Step 3 complete (${step3Duration}ms)`);
 
     try {
-      console.log('[ORDER] Step 4: Creating order in database...');
+      console.log(`[REQ:${requestId}] [ORDER] ${'─'.repeat(60)}`);
+      console.log(`[REQ:${requestId}] [ORDER] STEP 4: CREATING ORDER IN DATABASE`);
+      console.log(`[REQ:${requestId}] [ORDER] ${'─'.repeat(60)}`);
+      
+      const step4Start = Date.now();
+      
+      // Calculate total price
+      const calculatedTotal = total_price ? Number(total_price) : (unit_price ? Number(unit_price) * (Number(quantity || 1)) : 0);
+      
       const orderObj = {
         user_id: userId,
         status: 'created',
-        total: total_price ? Number(total_price) : (unit_price ? Number(unit_price) * (Number(quantity || 1)) : 0),
+        total: calculatedTotal,
         notes: null,
         order_date: new Date().toISOString(),
         deadline: deadline || null,
         payment_status: 'pending'
       };
-      console.log('[ORDER] Order object:', JSON.stringify(orderObj, null, 2));
+      
+      console.log(`[REQ:${requestId}] [ORDER] Order Object to Insert:`);
+      console.log(`[REQ:${requestId}] [ORDER]   user_id: ${orderObj.user_id}`);
+      console.log(`[REQ:${requestId}] [ORDER]   status: ${orderObj.status}`);
+      console.log(`[REQ:${requestId}] [ORDER]   total: ${orderObj.total}`);
+      console.log(`[REQ:${requestId}] [ORDER]   order_date: ${orderObj.order_date}`);
+      console.log(`[REQ:${requestId}] [ORDER]   deadline: ${orderObj.deadline || 'not set'}`);
+      console.log(`[REQ:${requestId}] [ORDER]   payment_status: ${orderObj.payment_status}`);
+      
+      console.log(`[REQ:${requestId}] [ORDER] Inserting into 'orders' table...`);
+      const orderInsertStart = Date.now();
       
       const { data: orderInsert, error: orderErr } = await supabase.from('orders').insert([orderObj]).select().maybeSingle();
+      
+      const orderInsertDuration = Date.now() - orderInsertStart;
+      
       if (orderErr || !orderInsert) {
-        console.error('[ORDER] ERROR: Insert order failed');
-        console.error('[ORDER] Order error:', JSON.stringify(orderErr, null, 2));
-        console.error('[ORDER] Order insert data:', orderInsert);
-        console.error('[ORDER] Error details:', {
-          message: orderErr?.message,
-          details: orderErr?.details,
-          hint: orderErr?.hint,
-          code: orderErr?.code
-        });
+        console.error(`[REQ:${requestId}] [ORDER] ❌ ERROR: Insert order failed after ${orderInsertDuration}ms`);
+        console.error(`[REQ:${requestId}] [ORDER] Error Message: ${orderErr?.message || 'no error object'}`);
+        console.error(`[REQ:${requestId}] [ORDER] Error Details: ${orderErr?.details || 'none'}`);
+        console.error(`[REQ:${requestId}] [ORDER] Error Hint: ${orderErr?.hint || 'none'}`);
+        console.error(`[REQ:${requestId}] [ORDER] Error Code: ${orderErr?.code || 'none'}`);
+        console.error(`[REQ:${requestId}] [ORDER] Insert Data: ${orderInsert ? JSON.stringify(orderInsert) : 'null'}`);
+        console.error(`[REQ:${requestId}] [ORDER] Full Error:`, JSON.stringify(orderErr, null, 2));
+        
         // cleanup uploaded file
-        console.log('[ORDER] Cleaning up uploaded file:', upData.path);
+        console.log(`[REQ:${requestId}] [ORDER] Initiating cleanup of uploaded file: ${upData.path}`);
         await supabase.storage.from(UPLOAD_BUCKET).remove([upData.path]).catch((e) => {
-          console.warn('[ORDER] Failed to cleanup file:', e);
+          console.warn(`[REQ:${requestId}] [ORDER] WARNING: Failed to cleanup file:`, e.message);
         });
+        console.log(`[REQ:${requestId}] [ORDER] Cleanup complete`);
+        
         return res.status(500).json({ 
           error: 'Failed to create order',
           details: orderErr?.message || 'Database insert failed'
