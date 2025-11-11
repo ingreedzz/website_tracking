@@ -150,6 +150,18 @@ router.get('/orders', verifyToken, requireAdmin, async (req, res) => {
     // Normalize response: add 'id' field and flatten order_items data
     const normalized = orders.map(order => {
       const firstItem = order.order_items && order.order_items.length > 0 ? order.order_items[0] : null;
+      
+      // Generate public URL for sablon image if path exists
+      let sablonUrl = null;
+      if (firstItem?.sablon_path && supabase) {
+        try {
+          const { data: pu } = supabase.storage.from(UPLOAD_BUCKET).getPublicUrl(firstItem.sablon_path);
+          sablonUrl = pu?.publicUrl || null;
+        } catch (e) {
+          console.warn('[GET /orders] Failed to get public URL for:', firstItem.sablon_path);
+        }
+      }
+      
       return {
         ...order,
         id: order.orders_id, // Add id field for frontend compatibility
@@ -161,6 +173,7 @@ router.get('/orders', verifyToken, requireAdmin, async (req, res) => {
         unit_price: firstItem?.unit_price || null,
         total_price: order.total || null,
         sablon_path: firstItem?.sablon_path || null,
+        sablon_url: sablonUrl,
         custom: firstItem?.customization || {}
       };
     });
@@ -198,6 +211,18 @@ router.get('/user/orders', verifyToken, async (req, res) => {
     // Normalize response: add 'id' field and flatten order_items data
     const normalized = orders.map(order => {
       const firstItem = order.order_items && order.order_items.length > 0 ? order.order_items[0] : null;
+      
+      // Generate public URL for sablon image if path exists
+      let sablonUrl = null;
+      if (firstItem?.sablon_path && supabase) {
+        try {
+          const { data: pu } = supabase.storage.from(UPLOAD_BUCKET).getPublicUrl(firstItem.sablon_path);
+          sablonUrl = pu?.publicUrl || null;
+        } catch (e) {
+          console.warn('[GET /user/orders] Failed to get public URL for:', firstItem.sablon_path);
+        }
+      }
+      
       return {
         ...order,
         id: order.orders_id, // Add id field for frontend compatibility
@@ -209,6 +234,7 @@ router.get('/user/orders', verifyToken, async (req, res) => {
         unit_price: firstItem?.unit_price || null,
         total_price: order.total || null,
         sablon_path: firstItem?.sablon_path || null,
+        sablon_url: sablonUrl,
         custom: firstItem?.customization || {}
       };
     });
@@ -261,6 +287,35 @@ router.get('/orders/:id', verifyToken, async (req, res) => {
     
     // Normalize response: add 'id' field and flatten order_items data
     const firstItem = order.order_items && order.order_items.length > 0 ? order.order_items[0] : null;
+    
+    // Generate public URL for sablon image if path exists
+    let sablonUrl = null;
+    if (firstItem?.sablon_path && supabase) {
+      try {
+        const { data: pu } = supabase.storage.from(UPLOAD_BUCKET).getPublicUrl(firstItem.sablon_path);
+        sablonUrl = pu?.publicUrl || null;
+      } catch (e) {
+        console.warn('[GET /orders/:id] Failed to get public URL for:', firstItem.sablon_path);
+      }
+    }
+    
+    // Generate public URL for payment proof if exists
+    let paymentProofUrl = null;
+    if (order.payment_proof_url && supabase) {
+      try {
+        // Check if it's already a full URL
+        if (order.payment_proof_url.startsWith('http://') || order.payment_proof_url.startsWith('https://')) {
+          paymentProofUrl = order.payment_proof_url;
+        } else {
+          // It's a storage path, generate public URL
+          const { data: pu } = supabase.storage.from(UPLOAD_BUCKET).getPublicUrl(order.payment_proof_url);
+          paymentProofUrl = pu?.publicUrl || null;
+        }
+      } catch (e) {
+        console.warn('[GET /orders/:id] Failed to get public URL for payment proof:', order.payment_proof_url);
+      }
+    }
+    
     const normalized = {
       ...order,
       id: order.orders_id, // Add id field for frontend compatibility
@@ -272,6 +327,9 @@ router.get('/orders/:id', verifyToken, async (req, res) => {
       unit_price: firstItem?.unit_price || null,
       total_price: order.total || null,
       sablon_path: firstItem?.sablon_path || null,
+      sablon_url: sablonUrl,
+      payment_proof_path: order.payment_proof_url || null,
+      payment_proof_url: paymentProofUrl,
       custom: firstItem?.customization || {}
     };
     
@@ -691,36 +749,98 @@ router.post('/server/orders', verifyToken, upload.single('file'), async (req, re
 
 // Upload payment proof and create a payments row
 router.post('/server/orders/:id/payment', verifyToken, upload.single('file'), async (req, res) => {
+  const requestId = req.headers['x-request-id'] || `req-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  
+  console.log(`[REQ:${requestId}] [PAYMENT] ${'='.repeat(60)}`);
+  console.log(`[REQ:${requestId}] [PAYMENT] PAYMENT PROOF UPLOAD STARTED`);
+  console.log(`[REQ:${requestId}] [PAYMENT] ${'='.repeat(60)}`);
+  
   try {
-  // User is already authenticated via middleware
-  const userId = req.user?.users_id || req.user?.user_id || null;
-
+    // User is already authenticated via middleware
+    const userId = req.user?.users_id || req.user?.user_id || null;
     const orderId = req.params.id;
-    if (!orderId) return res.status(400).json({ error: 'order id required' });
+    
+    console.log(`[REQ:${requestId}] [PAYMENT] STEP 1: VALIDATING REQUEST`);
+    console.log(`[REQ:${requestId}] [PAYMENT]   User ID: ${userId || 'NOT SET'}`);
+    console.log(`[REQ:${requestId}] [PAYMENT]   Order ID: ${orderId || 'NOT SET'}`);
+    console.log(`[REQ:${requestId}] [PAYMENT]   File attached: ${req.file ? 'YES' : 'NO'}`);
+    
+    if (!orderId) {
+      console.error(`[REQ:${requestId}] [PAYMENT] ❌ ERROR: No order ID provided`);
+      return res.status(400).json({ error: 'order id required' });
+    }
+    
+    if (!userId) {
+      console.error(`[REQ:${requestId}] [PAYMENT] ❌ ERROR: No user ID found`);
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
 
-    // verify order exists
+    console.log(`[REQ:${requestId}] [PAYMENT] STEP 2: VERIFYING ORDER EXISTS`);
     const { data: orderRows, error: orderErr } = await supabase.from('orders').select('*').eq('orders_id', orderId).maybeSingle();
-    if (orderErr) return res.status(500).json({ error: 'Failed to query order' });
-    if (!orderRows) return res.status(404).json({ error: 'Order not found' });
+    
+    if (orderErr) {
+      console.error(`[REQ:${requestId}] [PAYMENT] ❌ ERROR: Failed to query order`);
+      console.error(`[REQ:${requestId}] [PAYMENT]   Error:`, JSON.stringify(orderErr, null, 2));
+      return res.status(500).json({ error: 'Failed to query order' });
+    }
+    
+    if (!orderRows) {
+      console.error(`[REQ:${requestId}] [PAYMENT] ❌ ERROR: Order not found`);
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    
+    console.log(`[REQ:${requestId}] [PAYMENT] ✓ Order found`);
+    console.log(`[REQ:${requestId}] [PAYMENT]   Order total: ${orderRows.total}`);
+    console.log(`[REQ:${requestId}] [PAYMENT]   Current payment status: ${orderRows.payment_status || 'not set'}`);
 
-    // accept file upload (optional)
+    // Upload file to Supabase Storage
     let proofPath = null;
+    let publicUrl = null;
+    
     if (req.file) {
+      console.log(`[REQ:${requestId}] [PAYMENT] STEP 3: UPLOADING PAYMENT PROOF`);
       const file = req.file;
       const ext = (file.originalname && file.originalname.split('.').pop()) || 'jpg';
       const path = `users/${userId}/payments/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
       const contentType = file.mimetype || 'application/octet-stream';
+      
+      console.log(`[REQ:${requestId}] [PAYMENT]   File name: ${file.originalname}`);
+      console.log(`[REQ:${requestId}] [PAYMENT]   File size: ${file.size} bytes`);
+      console.log(`[REQ:${requestId}] [PAYMENT]   Content type: ${contentType}`);
+      console.log(`[REQ:${requestId}] [PAYMENT]   Storage path: ${path}`);
+      
       const { data: upData, error: upErr } = await supabase.storage.from(UPLOAD_BUCKET).upload(path, file.buffer, { contentType });
+      
       if (upErr) {
-        console.error('[PAYMENT] storage upload error', upErr)
+        console.error(`[REQ:${requestId}] [PAYMENT] ❌ ERROR: Storage upload failed`);
+        console.error(`[REQ:${requestId}] [PAYMENT]   Error:`, JSON.stringify(upErr, null, 2));
         return res.status(500).json({ error: 'Failed to upload payment proof' });
       }
+      
       proofPath = upData.path;
+      console.log(`[REQ:${requestId}] [PAYMENT] ✓ File uploaded successfully`);
+      console.log(`[REQ:${requestId}] [PAYMENT]   Stored at: ${proofPath}`);
+      
+      // Get public URL
+      try {
+        const { data: pu } = supabase.storage.from(UPLOAD_BUCKET).getPublicUrl(proofPath);
+        publicUrl = pu?.publicUrl || null;
+        console.log(`[REQ:${requestId}] [PAYMENT] ✓ Public URL generated: ${publicUrl}`);
+      } catch (e) {
+        console.warn(`[REQ:${requestId}] [PAYMENT] ⚠ WARNING: Failed to get public URL`, e.message);
+      }
+    } else {
+      console.log(`[REQ:${requestId}] [PAYMENT] STEP 3: SKIPPED (no file attached)`);
     }
 
-    const amount = req.body.amount ? Number(req.body.amount) : null;
-    const method = req.body.method || 'bank_transfer';
+    const amount = req.body.amount ? Number(req.body.amount) : (orderRows.total || null);
+    const method = req.body.payment_method || req.body.method || 'bank_transfer';
     const notes = req.body.notes || null;
+    
+    console.log(`[REQ:${requestId}] [PAYMENT] STEP 4: CREATING PAYMENT RECORD`);
+    console.log(`[REQ:${requestId}] [PAYMENT]   Amount: ${amount}`);
+    console.log(`[REQ:${requestId}] [PAYMENT]   Method: ${method}`);
+    console.log(`[REQ:${requestId}] [PAYMENT]   Notes: ${notes || 'none'}`);
 
     const paymentObj = {
       order_id: orderId,
@@ -732,19 +852,67 @@ router.post('/server/orders/:id/payment', verifyToken, upload.single('file'), as
     };
 
     const { data: paymentInsert, error: payErr } = await supabase.from('payments').insert([paymentObj]).select().maybeSingle();
+    
     if (payErr || !paymentInsert) {
-      console.error('[PAYMENT] insert error', payErr)
+      console.error(`[REQ:${requestId}] [PAYMENT] ❌ ERROR: Failed to create payment record`);
+      console.error(`[REQ:${requestId}] [PAYMENT]   Error:`, JSON.stringify(payErr, null, 2));
+      
       // cleanup upload if present
-      if (proofPath) await supabase.storage.from(UPLOAD_BUCKET).remove([proofPath]).catch(() => {});
+      if (proofPath) {
+        console.log(`[REQ:${requestId}] [PAYMENT] Cleaning up uploaded file...`);
+        await supabase.storage.from(UPLOAD_BUCKET).remove([proofPath]).catch(() => {});
+      }
       return res.status(500).json({ error: 'Failed to record payment' });
     }
+    
+    console.log(`[REQ:${requestId}] [PAYMENT] ✓ Payment record created`);
+    console.log(`[REQ:${requestId}] [PAYMENT]   Payment ID: ${paymentInsert.payment_id}`);
 
-    // update orders.payment_status to pending (or keep as provided)
-    await supabase.from('orders').update({ payment_status: 'pending' }).eq('orders_id', orderId).catch(() => {});
+    console.log(`[REQ:${requestId}] [PAYMENT] STEP 5: UPDATING ORDER STATUS`);
+    const { error: updateErr } = await supabase.from('orders').update({ payment_status: 'pending' }).eq('orders_id', orderId);
+    
+    if (updateErr) {
+      console.warn(`[REQ:${requestId}] [PAYMENT] ⚠ WARNING: Failed to update order status`, updateErr.message);
+    } else {
+      console.log(`[REQ:${requestId}] [PAYMENT] ✓ Order payment_status updated to 'pending'`);
+    }
+    
+    // Fetch updated order with items to return complete info
+    console.log(`[REQ:${requestId}] [PAYMENT] STEP 6: FETCHING UPDATED ORDER`);
+    const { data: updatedOrder, error: fetchErr } = await supabase.from('orders')
+      .select('*,order_items(*)')
+      .eq('orders_id', orderId)
+      .maybeSingle();
+    
+    if (fetchErr || !updatedOrder) {
+      console.warn(`[REQ:${requestId}] [PAYMENT] ⚠ WARNING: Failed to fetch updated order`, fetchErr?.message);
+    } else {
+      console.log(`[REQ:${requestId}] [PAYMENT] ✓ Updated order fetched`);
+    }
 
-    return res.status(201).json({ payment: paymentInsert });
+    console.log(`[REQ:${requestId}] [PAYMENT] ${'='.repeat(60)}`);
+    console.log(`[REQ:${requestId}] [PAYMENT] PAYMENT UPLOAD COMPLETE`);
+    console.log(`[REQ:${requestId}] [PAYMENT] ${'='.repeat(60)}`);
+
+    // Return payment and order with public URL
+    return res.status(201).json({ 
+      payment: paymentInsert,
+      order: updatedOrder ? {
+        ...updatedOrder,
+        id: updatedOrder.orders_id,
+        payment_proof_path: proofPath,
+        payment_proof_url: publicUrl
+      } : null
+    });
+    
   } catch (err) {
-    console.error('[server/orders/:id/payment] handler error', err)
+    console.error(`[REQ:${requestId}] [PAYMENT] ${'='.repeat(60)}`);
+    console.error(`[REQ:${requestId}] [PAYMENT] UNEXPECTED ERROR`);
+    console.error(`[REQ:${requestId}] [PAYMENT] ${'='.repeat(60)}`);
+    console.error(`[REQ:${requestId}] [PAYMENT] Error name:`, err.name);
+    console.error(`[REQ:${requestId}] [PAYMENT] Error message:`, err.message);
+    console.error(`[REQ:${requestId}] [PAYMENT] Error stack:`, err.stack);
+    
     return res.status(500).json({ error: err.message || String(err) });
   }
 });
