@@ -1,3 +1,76 @@
+### November 11, 2025 - Added Smoke Test Suite and GitHub Actions CI Workflow
+
+**Comprehensive Testing Infrastructure:**
+1. **Smoke Test Script**: Created automated test suite (`smoke-test.js`) that validates complete user flow:
+   - Health Check - Verifies backend is running and database is connected
+   - User Registration - Creates test user and receives JWT token
+   - User Login - Authenticates and validates token
+   - Create Order - Submits order with image upload to Supabase Storage
+   - Verify Dashboard - Checks order appears correctly with no null/dash values
+
+2. **GitHub Actions CI Workflow**: Added automated testing on PRs and pushes:
+   - Runs on every pull request to main branch
+   - Runs on every push to main branch
+   - Supports manual trigger with custom URL
+   - Tests against production Render deployment
+   - Uploads test artifacts for debugging
+   - 10-minute timeout to prevent hanging
+   - Secure permissions configuration (contents: read only)
+
+3. **Request Tracing and Logging**:
+   - Detailed timestamp-based logging for all test steps
+   - Correlates with backend request tracing (X-Request-Id)
+   - Captures request/response data for debugging
+   - Identifies null or dash values in dashboard data
+
+4. **Documentation**: Created comprehensive `SMOKE_TEST.md` with:
+   - Complete usage guide with examples
+   - Detailed test descriptions and expected results
+   - Troubleshooting guide for common issues
+   - Integration guide for Render log correlation
+   - Instructions for adding new tests
+   - Local development setup
+
+**Files Created:**
+- `smoke-test.js` - Main test suite (370 lines)
+- `.github/workflows/smoke-test.yml` - CI workflow configuration
+- `SMOKE_TEST.md` - Complete documentation
+
+**Files Modified:**
+- `PROGRESS.md` - Fixed merge conflict markers and updated with this entry
+
+**Testing & Validation:**
+- ✅ Vite build successful (308.13 KB bundle, gzip: 93.22 kB)
+- ✅ CodeQL security scan passed (0 alerts after fixing GitHub Actions permissions)
+- ✅ Smoke test script validated (syntax and structure)
+- ✅ GitHub Actions workflow validated (proper permissions set)
+
+**Usage:**
+```bash
+# Run against production
+node smoke-test.js
+
+# Run against specific URL
+node smoke-test.js https://website-tracking.onrender.com
+
+# Run locally
+node smoke-test.js http://localhost:3000
+```
+
+**CI/CD Integration:**
+- Automatically runs on every PR
+- Provides pass/fail status for merge decisions
+- Detailed test output available in Actions logs
+- Test artifacts retained for 7 days
+
+**Next Steps:**
+1. Merge this PR to enable automated testing
+2. Monitor first smoke test run in GitHub Actions
+3. Verify test results correlate with Render logs
+4. Use smoke tests to validate future changes
+
+---
+
 ### November 11, 2025 - Added enhanced request tracing
 
 - Added enhanced request tracing middleware in `backend/server.js` to assign a per-request id (X-Request-Id / generated UUID), log request START with method, path, auth presence and content-length, and log request END with HTTP status and duration (ms). This improves ability to correlate logs in Render and Vercel and helps debug intermittent production issues.
@@ -276,7 +349,7 @@ Each order creation request now logs:
 - `src/views/Dashboard.vue` - Added frontend logging
 
 ---
-=======
+
 ### November 11, 2025 - Polish and finalize delegated work
 
 **Summary:**
@@ -297,7 +370,8 @@ All delegated work from previous PRs has been successfully integrated into the m
 - PR #4: Tested authentication and new order functionality
 
 **Status:** The application is now in a stable state with all planned features implemented and integrated.
->>>>>>> origin/main
+
+---
 
 ### November 10, 2025 - Recovery, integrate and deploy
 
