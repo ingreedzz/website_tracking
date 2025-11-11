@@ -36,88 +36,300 @@ const SB_HEADERS = SUPABASE_KEY ? {
 // MySQL fallback removed — use Supabase only
 
 router.post('/register', async (req, res) => {
+  const requestId = req.id || 'unknown';
+  console.log(`[REQ:${requestId}] [REGISTER] === Starting user registration ===`);
+  console.log(`[REQ:${requestId}] [REGISTER] Timestamp:`, new Date().toISOString());
+  
   try {
-    const { name, email, password, phone } = req.body;
-    if (!name || !email || !password) return res.status(400).json({ error: 'name, email and password required' });
+    // Step 1: Extract and validate input
+    console.log(`[REQ:${requestId}] [REGISTER] Step 1: Extracting input data`);
+    const { name, email, password, phone, role } = req.body;
+    console.log(`[REQ:${requestId}] [REGISTER] Input:`, { 
+      name, 
+      email, 
+      phone: phone || '(not provided)',
+      role: role || '(will use default)',
+      hasPassword: !!password 
+    });
+    
+    if (!name || !email || !password) {
+      console.error(`[REQ:${requestId}] [REGISTER] ❌ Missing required fields`);
+      return res.status(400).json({ error: 'name, email and password required' });
+    }
+    console.log(`[REQ:${requestId}] [REGISTER] ✓ Input validation passed`);
 
-    console.log('[REGISTER] incoming:', { name, email, phone })
+    // Step 2: Validate Supabase configuration
+    console.log(`[REQ:${requestId}] [REGISTER] Step 2: Validating Supabase configuration`);
+    if (!REST_BASE) {
+      console.error(`[REQ:${requestId}] [REGISTER] ❌ REST_BASE not configured`);
+      return res.status(500).json({ error: 'Supabase not configured' });
+    }
+    if (!SUPABASE_KEY) {
+      console.error(`[REQ:${requestId}] [REGISTER] ❌ SUPABASE_KEY not configured`);
+      return res.status(500).json({ error: 'Supabase credentials missing' });
+    }
+    console.log(`[REQ:${requestId}] [REGISTER] ✓ Supabase configuration validated`);
 
+    // Step 3: Hash password
+    console.log(`[REQ:${requestId}] [REGISTER] Step 3: Hashing password`);
     const hashed = await bcrypt.hash(password, 10);
+    console.log(`[REQ:${requestId}] [REGISTER] ✓ Password hashed`);
 
-    // Using Supabase exclusively (MySQL fallback removed)
-
-    if (!REST_BASE) return res.status(500).json({ error: 'Supabase not configured' })
+    // Step 4: Check for existing email
+    console.log(`[REQ:${requestId}] [REGISTER] Step 4: Checking for existing email`);
+    const checkUrl = `${REST_BASE}/users?select=*&email=eq.${encodeURIComponent(email)}`;
     try {
-      // Check for existing email
-      const checkUrl = `${REST_BASE}/users?select=*&email=eq.${encodeURIComponent(email)}`;
-      const checkResp = await axios.get(checkUrl, { headers: SB_HEADERS });
+      const checkResp = await axios.get(checkUrl, { headers: SB_HEADERS, timeout: 5000 });
       const existing = Array.isArray(checkResp.data) && checkResp.data.length ? checkResp.data[0] : null;
+      
       if (existing) {
+        console.warn(`[REQ:${requestId}] [REGISTER] ⚠️  Email already registered`);
+        console.warn(`[REQ:${requestId}] [REGISTER] Existing user ID:`, existing.users_id);
         return res.status(409).json({ error: 'Email already registered' });
       }
+      console.log(`[REQ:${requestId}] [REGISTER] ✓ Email is available`);
+    } catch (checkErr) {
+      console.error(`[REQ:${requestId}] [REGISTER] ❌ Failed to check existing email`);
+      console.error(`[REQ:${requestId}] [REGISTER] Error:`, checkErr.message);
+      if (checkErr.response) {
+        console.error(`[REQ:${requestId}] [REGISTER] Response status:`, checkErr.response.status);
+        console.error(`[REQ:${requestId}] [REGISTER] Response data:`, checkErr.response.data);
+      }
+      throw checkErr;
+    }
 
-      const url = `${REST_BASE}/users`;
-      const body = [{ name, email, password: hashed, phone }];
-      const resp = await axios.post(url, body, { headers: { ...SB_HEADERS, Prefer: 'return=representation' } });
+    // Step 5: Determine user role
+    console.log(`[REQ:${requestId}] [REGISTER] Step 5: Determining user role`);
+    // Allow role to be specified for testing/development, but default to 'customer'
+    // In production, you may want to remove the role parameter entirely
+    const userRole = role && ['customer', 'admin'].includes(role) ? role : 'customer';
+    const isAdmin = userRole === 'admin';
+    
+    if (role && role !== userRole) {
+      console.warn(`[REQ:${requestId}] [REGISTER] ⚠️  Invalid role '${role}' provided, using 'customer'`);
+    }
+    
+    console.log(`[REQ:${requestId}] [REGISTER] User role:`, userRole);
+    console.log(`[REQ:${requestId}] [REGISTER] Is admin:`, isAdmin);
+    
+    // Step 6: Create user in database
+    console.log(`[REQ:${requestId}] [REGISTER] Step 6: Creating user in database`);
+    const url = `${REST_BASE}/users`;
+    const body = [{ 
+      name, 
+      email, 
+      password: hashed, 
+      phone: phone || null,
+      role: userRole,
+      is_admin: isAdmin
+    }];
+    
+    console.log(`[REQ:${requestId}] [REGISTER] Creating user with role:`, userRole);
+    
+    try {
+      const resp = await axios.post(url, body, { 
+        headers: { ...SB_HEADERS, Prefer: 'return=representation' },
+        timeout: 10000
+      });
+      
       const created = Array.isArray(resp.data) && resp.data.length ? resp.data[0] : null;
-      if (!created) return res.status(500).json({ error: 'Failed to create user' });
+      
+      if (!created) {
+        console.error(`[REQ:${requestId}] [REGISTER] ❌ No data returned from database`);
+        return res.status(500).json({ error: 'Failed to create user' });
+      }
+      
+      console.log(`[REQ:${requestId}] [REGISTER] ✓ User created successfully`);
+      console.log(`[REQ:${requestId}] [REGISTER] User ID:`, created.users_id);
+      console.log(`[REQ:${requestId}] [REGISTER] User role:`, created.role);
+      console.log(`[REQ:${requestId}] [REGISTER] Is admin:`, created.is_admin);
+      
+      // Remove password from response
       if (created.password) delete created.password;
 
-      // Sign a JWT for the created user - use only users_id
+      // Step 7: Generate JWT token
+      console.log(`[REQ:${requestId}] [REGISTER] Step 7: Generating JWT token`);
       const payload = { 
         users_id: created.users_id, 
         email: created.email, 
         role: created.role || 'customer' 
       };
       const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
-
+      console.log(`[REQ:${requestId}] [REGISTER] ✓ JWT token generated`);
+      
+      console.log(`[REQ:${requestId}] [REGISTER] === Registration complete ===`);
       res.status(201).json({ user: created, token });
-    } catch (err) {
-      console.error('[REGISTER] axios error', err && err.response ? { status: err.response.status, data: err.response.data } : err.message)
-      const msg = err.response && err.response.data ? err.response.data : err.message;
-      // If Supabase returned a duplicate constraint message, normalize it
-      if (err.response && err.response.status === 409) return res.status(409).json({ error: 'Email already registered' });
-      res.status(400).json({ error: msg });
+      
+    } catch (createErr) {
+      console.error(`[REQ:${requestId}] [REGISTER] ❌ Failed to create user`);
+      console.error(`[REQ:${requestId}] [REGISTER] Error:`, createErr.message);
+      
+      if (createErr.response) {
+        console.error(`[REQ:${requestId}] [REGISTER] Response status:`, createErr.response.status);
+        console.error(`[REQ:${requestId}] [REGISTER] Response data:`, JSON.stringify(createErr.response.data));
+        
+        if (createErr.response.status === 409) {
+          return res.status(409).json({ error: 'Email already registered' });
+        }
+      }
+      
+      if (createErr.code === 'ECONNABORTED') {
+        console.error(`[REQ:${requestId}] [REGISTER] Request timeout`);
+        return res.status(504).json({ error: 'Database request timeout' });
+      }
+      
+      const msg = createErr.response?.data || createErr.message;
+      res.status(400).json({ 
+        error: msg,
+        details: process.env.NODE_ENV === 'development' ? createErr.message : undefined
+      });
     }
+    
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(`[REQ:${requestId}] [REGISTER] ❌ Unexpected error`);
+    console.error(`[REQ:${requestId}] [REGISTER] Error name:`, err.name);
+    console.error(`[REQ:${requestId}] [REGISTER] Error message:`, err.message);
+    console.error(`[REQ:${requestId}] [REGISTER] Stack:`, err.stack);
+    
+    res.status(500).json({ 
+      error: 'Internal server error',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   }
 });
 
 router.post('/login', async (req, res) => {
+  const requestId = req.id || 'unknown';
+  console.log(`[REQ:${requestId}] [LOGIN] === Starting user login ===`);
+  console.log(`[REQ:${requestId}] [LOGIN] Timestamp:`, new Date().toISOString());
+  
   try {
+    // Step 1: Extract and validate input
+    console.log(`[REQ:${requestId}] [LOGIN] Step 1: Extracting input data`);
     const { email, password } = req.body;
-    if (!email || !password) return res.status(400).json({ error: 'email and password required' });
-
-    console.log('[LOGIN] incoming:', { email })
+    console.log(`[REQ:${requestId}] [LOGIN] Input:`, { 
+      email, 
+      hasPassword: !!password 
+    });
     
-    // Using Supabase exclusively (MySQL fallback removed)
+    if (!email || !password) {
+      console.error(`[REQ:${requestId}] [LOGIN] ❌ Missing required fields`);
+      return res.status(400).json({ error: 'email and password required' });
+    }
+    console.log(`[REQ:${requestId}] [LOGIN] ✓ Input validation passed`);
 
-    if (!REST_BASE) return res.status(500).json({ error: 'Supabase not configured' })
+    // Step 2: Validate Supabase configuration
+    console.log(`[REQ:${requestId}] [LOGIN] Step 2: Validating Supabase configuration`);
+    if (!REST_BASE) {
+      console.error(`[REQ:${requestId}] [LOGIN] ❌ REST_BASE not configured`);
+      return res.status(500).json({ error: 'Supabase not configured' });
+    }
+    if (!SUPABASE_KEY) {
+      console.error(`[REQ:${requestId}] [LOGIN] ❌ SUPABASE_KEY not configured`);
+      return res.status(500).json({ error: 'Supabase credentials missing' });
+    }
+    console.log(`[REQ:${requestId}] [LOGIN] ✓ Supabase configuration validated`);
+    
+    // Step 3: Fetch user from database
+    console.log(`[REQ:${requestId}] [LOGIN] Step 3: Fetching user from database`);
+    const url = `${REST_BASE}/users?select=*&email=eq.${encodeURIComponent(email)}`;
+    
     try {
-      const url = `${REST_BASE}/users?select=*&email=eq.${encodeURIComponent(email)}`;
-      const resp = await axios.get(url, { headers: SB_HEADERS });
+      const resp = await axios.get(url, { 
+        headers: SB_HEADERS,
+        timeout: 5000
+      });
+      
       const rows = Array.isArray(resp.data) ? resp.data : [];
       const data = rows.length ? rows[0] : null;
-      console.log('[LOGIN] axios response rows=', rows.length)
-      if (!data) return res.status(401).json({ error: 'Invalid credentials' });
+      
+      console.log(`[REQ:${requestId}] [LOGIN] Database query result:`, {
+        rowsFound: rows.length,
+        userFound: !!data
+      });
+      
+      if (!data) {
+        console.warn(`[REQ:${requestId}] [LOGIN] ⚠️  No user found with email:`, email);
+        return res.status(401).json({ error: 'Invalid credentials' });
+      }
+      
+      console.log(`[REQ:${requestId}] [LOGIN] ✓ User found`);
+      console.log(`[REQ:${requestId}] [LOGIN] User details:`, {
+        users_id: data.users_id,
+        email: data.email,
+        name: data.name,
+        role: data.role,
+        is_admin: data.is_admin,
+        hasPassword: !!data.password
+      });
+      
+      // Step 4: Verify password
+      console.log(`[REQ:${requestId}] [LOGIN] Step 4: Verifying password`);
       const match = await bcrypt.compare(password, data.password || '');
-      if (!match) return res.status(401).json({ error: 'Invalid credentials' });
+      
+      if (!match) {
+        console.warn(`[REQ:${requestId}] [LOGIN] ⚠️  Password mismatch for user:`, data.users_id);
+        return res.status(401).json({ error: 'Invalid credentials' });
+      }
+      
+      console.log(`[REQ:${requestId}] [LOGIN] ✓ Password verified`);
+      
+      // Remove password from response
       delete data.password;
-      // Sign a JWT and return with user - use only users_id
+      
+      // Step 5: Generate JWT token
+      console.log(`[REQ:${requestId}] [LOGIN] Step 5: Generating JWT token`);
       const payload = { 
         users_id: data.users_id, 
         email: data.email, 
         role: data.role || 'customer' 
       };
+      
+      console.log(`[REQ:${requestId}] [LOGIN] Token payload:`, {
+        users_id: payload.users_id,
+        email: payload.email,
+        role: payload.role
+      });
+      
       const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+      console.log(`[REQ:${requestId}] [LOGIN] ✓ JWT token generated`);
+      
+      console.log(`[REQ:${requestId}] [LOGIN] === Login complete ===`);
+      console.log(`[REQ:${requestId}] [LOGIN] User role:`, data.role);
+      console.log(`[REQ:${requestId}] [LOGIN] Is admin:`, data.is_admin);
+      
       res.json({ user: data, token });
-    } catch (err) {
-      console.error('[LOGIN] axios error', err && err.response ? { status: err.response.status, data: err.response.data } : err.message)
-      res.status(500).json({ error: err.message });
+      
+    } catch (fetchErr) {
+      console.error(`[REQ:${requestId}] [LOGIN] ❌ Failed to fetch user`);
+      console.error(`[REQ:${requestId}] [LOGIN] Error:`, fetchErr.message);
+      
+      if (fetchErr.response) {
+        console.error(`[REQ:${requestId}] [LOGIN] Response status:`, fetchErr.response.status);
+        console.error(`[REQ:${requestId}] [LOGIN] Response data:`, JSON.stringify(fetchErr.response.data));
+      }
+      
+      if (fetchErr.code === 'ECONNABORTED') {
+        console.error(`[REQ:${requestId}] [LOGIN] Request timeout`);
+        return res.status(504).json({ error: 'Database request timeout' });
+      }
+      
+      res.status(500).json({ 
+        error: 'Database error',
+        details: process.env.NODE_ENV === 'development' ? fetchErr.message : undefined
+      });
     }
+    
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(`[REQ:${requestId}] [LOGIN] ❌ Unexpected error`);
+    console.error(`[REQ:${requestId}] [LOGIN] Error name:`, err.name);
+    console.error(`[REQ:${requestId}] [LOGIN] Error message:`, err.message);
+    console.error(`[REQ:${requestId}] [LOGIN] Stack:`, err.stack);
+    
+    res.status(500).json({ 
+      error: 'Internal server error',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   }
 });
 
