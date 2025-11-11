@@ -23,14 +23,14 @@
       <tbody>
         <tr v-if="orders.length === 0"><td colspan="9" class="p-6 text-center">No Order</td></tr>
         <tr v-for="o in orders" :key="o.id || o.orders_id" class="hover:bg-gray-100 cursor-pointer" @click="goDetail(o.id || o.orders_id)">
-          <td class="px-2 py-2">{{ o.id || o.orders_id }}</td>
-          <td class="px-2 py-2">{{ o.user_id }}</td>
+          <td class="px-2 py-2">{{ (o.id || o.orders_id).substring(0, 8) }}...</td>
+          <td class="px-2 py-2">{{ o.user_name || 'Unknown' }}</td>
           <td class="px-2 py-2">{{ o.product || '-' }}</td>
           <td class="px-2 py-2">{{ o.model || '-' }}</td>
           <td class="px-2 py-2">{{ o.status }}</td>
           <td class="px-2 py-2">{{ o.order_date ? new Date(o.order_date).toLocaleDateString() : '-' }}</td>
           <td class="px-2 py-2">{{ o.deadline || '-' }}</td>
-          <td class="px-2 py-2">{{ o.total || o.total_price || '-' }}</td>
+          <td class="px-2 py-2">Rp {{ formatPrice(o.total || o.total_price) }}</td>
           <td class="px-2 py-2">{{ o.payment_status || '-' }}</td>
         </tr>
       </tbody>
@@ -46,6 +46,15 @@ import { apiGet } from '../lib/api'
 
 const orders = ref([])
 const router = useRouter()
+
+function formatPrice(price) {
+  if (!price || isNaN(price)) return '0';
+  try {
+    return Number(price).toLocaleString('id-ID');
+  } catch (e) {
+    return String(price);
+  }
+}
 
 async function fetchOrders() {
   console.log('[AdminDashboard] Fetching all orders...');

@@ -24,9 +24,9 @@
         <select v-model="orderId" class="w-full border rounded px-3 py-2">
           <option value="">-- Select order --</option>
           <option v-for="o in orders" :key="o.id" :value="o.id">
-            #{{ o.id }} — {{ o.product }} ({{ o.total_price ? Number(o.total_price).toLocaleString('id-ID') : '-' }})
-            <span v-if="o.payment_status === 'paid'"> — PAID</span>
-            <span v-else-if="o.payment_proof_path || o.payment_proof_url"> — Proof uploaded</span>
+            Order #{{ o.id?.substring(0, 8) }} — {{ formatOrderDisplay(o) }} — Rp {{ formatPrice(o.total_price) }}
+            <span v-if="o.payment_status === 'paid'"> — ✓ PAID</span>
+            <span v-else-if="o.payment_proof_path || o.payment_proof_url"> — ⏳ Pending</span>
           </option>
         </select>
       </div>
@@ -123,6 +123,46 @@ const paymentProofUrl = computed(() => {
   const o = selectedOrder.value
   return o?.payment_proof_url || o?.payment_proof_path || ''
 })
+
+function formatOrderDisplay(order) {
+  // Format order details for display in dropdown
+  if (!order) return 'Unknown Order';
+  
+  const parts = [];
+  
+  // Add product name (primary identifier)
+  if (order.product && order.product !== 'Unknown Product') {
+    parts.push(order.product);
+  }
+  
+  // Add model if different from product
+  if (order.model && order.model !== 'N/A' && order.model !== order.product) {
+    parts.push(order.model);
+  }
+  
+  // Add quantity if available
+  if (order.quantity && order.quantity > 0) {
+    parts.push(`${order.quantity} pcs`);
+  }
+  
+  // If no meaningful data, show order ID
+  if (parts.length === 0) {
+    return `Order ${order.id?.substring(0, 8) || 'Unknown'}`;
+  }
+  
+  return parts.join(' • ');
+}
+
+function formatPrice(price) {
+  // Format price in Indonesian Rupiah format
+  if (!price || isNaN(price)) return '0';
+  
+  try {
+    return Number(price).toLocaleString('id-ID');
+  } catch (e) {
+    return String(price);
+  }
+}
 
 function onFileChange(e) {
   const f = e.target.files && e.target.files[0]
@@ -249,8 +289,25 @@ async function loadOrders() {
     console.log('[PAYMENT] User role:', { isAdmin: isAdmin });
     console.log('[PAYMENT] Using endpoint:', endpoint);
     
-    // Use API helper for authenticated request
-    const data = await apiGet(endpoint);
+    // Use API helper for authenticated request with error handling
+    let data;
+    try {
+      data = await apiGet(endpoint);
+    } catch (apiErr) {
+      console.error('[PAYMENT] API request failed');
+      console.error('[PAYMENT] Error:', apiErr.message);
+      
+      // Provide user-friendly error messages
+      if (apiErr.message.includes('502')) {
+        console.error('[PAYMENT] Server returned 502 - Bad Gateway');
+        console.error('[PAYMENT] This usually means the backend server is down or unreachable');
+      } else if (apiErr.message.includes('504')) {
+        console.error('[PAYMENT] Server returned 504 - Gateway Timeout');
+      }
+      
+      throw apiErr; // Re-throw for outer catch
+    }
+    
     orders.value = data || []
     
     console.log('[PAYMENT] Orders loaded:', orders.value.length);
@@ -258,13 +315,25 @@ async function loadOrders() {
       console.log('[PAYMENT] First order sample:', {
         id: orders.value[0].id,
         product: orders.value[0].product,
+        model: orders.value[0].model,
         total_price: orders.value[0].total_price,
         payment_status: orders.value[0].payment_status
       });
+      
+      // Log any orders with missing product info
+      const missingProduct = orders.value.filter(o => !o.product || o.product === 'Unknown Product');
+      if (missingProduct.length > 0) {
+        console.warn('[PAYMENT] ⚠️', missingProduct.length, 'orders have missing product information');
+        console.warn('[PAYMENT] Sample order with missing info:', missingProduct[0]);
+      }
     }
   } catch (e) {
-    console.error('[PAYMENT] Load orders error:', e);
+    console.error('[PAYMENT] === Load orders error ===');
+    console.error('[PAYMENT] Error name:', e.name);
     console.error('[PAYMENT] Error message:', e.message);
+    if (e.stack) {
+      console.error('[PAYMENT] Error stack:', e.stack);
+    }
     orders.value = []
   }
   console.log('[PAYMENT] === Load complete ===');
