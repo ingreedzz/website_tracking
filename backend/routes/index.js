@@ -4,6 +4,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const supabase = require('../supabaseClient');
+const { verifyToken, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -62,9 +63,12 @@ router.post('/register', async (req, res) => {
       if (!created) return res.status(500).json({ error: 'Failed to create user' });
       if (created.password) delete created.password;
 
-      // Sign a JWT for the created user
-  // include possible PK names (users_id, user_id, id) to ensure token contains an identifier
-  const payload = { user_id: created.users_id || created.user_id || created.id || created.userId || null, users_id: created.users_id || created.user_id || created.id || created.userId || null, email: created.email, role: created.role || 'customer' };
+      // Sign a JWT for the created user - use only users_id
+      const payload = { 
+        users_id: created.users_id, 
+        email: created.email, 
+        role: created.role || 'customer' 
+      };
       const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
 
       res.status(201).json({ user: created, token });
@@ -100,9 +104,12 @@ router.post('/login', async (req, res) => {
       const match = await bcrypt.compare(password, data.password || '');
       if (!match) return res.status(401).json({ error: 'Invalid credentials' });
       delete data.password;
-      // Sign a JWT and return with user
-  // include both user_id and users_id to be compatible with different DB PK names
-  const payload = { user_id: data.users_id || data.user_id || data.id || data.userId || null, users_id: data.users_id || data.user_id || data.id || data.userId || null, email: data.email, role: data.role || 'customer' };
+      // Sign a JWT and return with user - use only users_id
+      const payload = { 
+        users_id: data.users_id, 
+        email: data.email, 
+        role: data.role || 'customer' 
+      };
       const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
       res.json({ user: data, token });
     } catch (err) {
@@ -114,10 +121,10 @@ router.post('/login', async (req, res) => {
   }
 });
 
-router.get('/users', async (req, res) => {
+router.get('/users', verifyToken, requireAdmin, async (req, res) => {
   try {
     if (!REST_BASE) return res.status(500).json({ error: 'Supabase not configured' })
-    const url = `${REST_BASE}/users?select=user_id,name,email,phone,role`;
+    const url = `${REST_BASE}/users?select=users_id,name,email,phone,role`;
     const resp = await axios.get(url, { headers: SB_HEADERS });
     res.json(Array.isArray(resp.data) ? resp.data : []);
   } catch (err) {
@@ -126,29 +133,150 @@ router.get('/users', async (req, res) => {
   }
 });
 
-router.get('/orders', async (req, res) => {
+router.get('/orders', verifyToken, requireAdmin, async (req, res) => {
+  console.log('[GET /orders] Fetching all orders for admin');
+  const requestUserId = req.user?.users_id || req.user?.user_id || null;
+  const requestUserRole = req.user?.role || null;
+  console.log('[GET /orders] User:', { users_id: requestUserId, role: requestUserRole });
   try {
     if (!REST_BASE) return res.status(500).json({ error: 'Supabase not configured' })
     // include related order_items in the response for admin UI
     const url = `${REST_BASE}/orders?select=*,order_items(*)`;
+    console.log('[GET /orders] Fetching from Supabase:', url);
     const resp = await axios.get(url, { headers: SB_HEADERS });
-    res.json(Array.isArray(resp.data) ? resp.data : []);
+    const orders = Array.isArray(resp.data) ? resp.data : [];
+    console.log('[GET /orders] Retrieved orders:', orders.length);
+    
+    // Normalize response: add 'id' field and flatten order_items data
+    const normalized = orders.map(order => {
+      const firstItem = order.order_items && order.order_items.length > 0 ? order.order_items[0] : null;
+      return {
+        ...order,
+        id: order.orders_id, // Add id field for frontend compatibility
+        product: firstItem?.product_snapshot?.product || null,
+        model: firstItem?.product_snapshot?.model || null,
+        size: firstItem?.product_snapshot?.size || null,
+        color: firstItem?.product_snapshot?.color || null,
+        quantity: firstItem?.quantity || null,
+        unit_price: firstItem?.unit_price || null,
+        total_price: order.total || null,
+        sablon_path: firstItem?.sablon_path || null,
+        custom: firstItem?.customization || {}
+      };
+    });
+    
+    console.log('[GET /orders] Normalized orders:', normalized.length);
+    res.json(normalized);
   } catch (err) {
     console.error('[ORDERS] axios error', err && err.response ? { status: err.response.status, data: err.response.data } : err.message)
     res.status(500).json({ error: err.message });
   }
 });
 
-router.get('/orders/:id', async (req, res) => {
+// User-specific orders endpoint (no admin required)
+router.get('/user/orders', verifyToken, async (req, res) => {
+  console.log('[GET /user/orders] Fetching orders for user');
+  const requestUserId = req.user?.users_id || req.user?.user_id || null;
+  const requestUserRole = req.user?.role || null;
+  console.log('[GET /user/orders] User:', { users_id: requestUserId, role: requestUserRole });
+  try {
+  const userId = req.user?.users_id || req.user?.user_id || null;
+    if (!userId) {
+      console.error('[GET /user/orders] No user ID');
+      return res.status(401).json({ error: 'User ID not found' });
+    }
+    
+    if (!REST_BASE) return res.status(500).json({ error: 'Supabase not configured' })
+    
+    // Fetch only orders for this user
+    const url = `${REST_BASE}/orders?user_id=eq.${encodeURIComponent(userId)}&select=*,order_items(*)`;
+    console.log('[GET /user/orders] Fetching from Supabase:', url);
+    const resp = await axios.get(url, { headers: SB_HEADERS });
+    const orders = Array.isArray(resp.data) ? resp.data : [];
+    console.log('[GET /user/orders] Retrieved orders:', orders.length);
+    
+    // Normalize response: add 'id' field and flatten order_items data
+    const normalized = orders.map(order => {
+      const firstItem = order.order_items && order.order_items.length > 0 ? order.order_items[0] : null;
+      return {
+        ...order,
+        id: order.orders_id, // Add id field for frontend compatibility
+        product: firstItem?.product_snapshot?.product || null,
+        model: firstItem?.product_snapshot?.model || null,
+        size: firstItem?.product_snapshot?.size || null,
+        color: firstItem?.product_snapshot?.color || null,
+        quantity: firstItem?.quantity || null,
+        unit_price: firstItem?.unit_price || null,
+        total_price: order.total || null,
+        sablon_path: firstItem?.sablon_path || null,
+        custom: firstItem?.customization || {}
+      };
+    });
+    
+    console.log('[GET /user/orders] Normalized orders:', normalized.length);
+    res.json(normalized);
+  } catch (err) {
+    console.error('[GET /user/orders] error', err && err.response ? { status: err.response.status, data: err.response.data } : err.message)
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/orders/:id', verifyToken, async (req, res) => {
+  console.log('[GET /orders/:id] Fetching order details');
   try {
     const id = req.params.id;
     if (!id) return res.status(400).json({ error: 'order id required' });
+    console.log('[GET /orders/:id] Order ID:', id);
+    const requestUserId = req.user?.users_id || req.user?.user_id || null;
+    const requestUserRole = req.user?.role || null;
+    console.log('[GET /orders/:id] User:', { users_id: requestUserId, role: requestUserRole });
+    
     if (!REST_BASE) return res.status(500).json({ error: 'Supabase not configured' })
-  const url = `${REST_BASE}/orders?order_id=eq.${encodeURIComponent(id)}&select=*,order_items(*)`;
+    const url = `${REST_BASE}/orders?orders_id=eq.${encodeURIComponent(id)}&select=*,order_items(*)`;
+    console.log('[GET /orders/:id] Fetching from Supabase:', url);
     const resp = await axios.get(url, { headers: SB_HEADERS });
     const rows = Array.isArray(resp.data) ? resp.data : [];
-    if (!rows.length) return res.status(404).json({ error: 'Order not found' });
-    res.json(rows[0]);
+    console.log('[GET /orders/:id] Found orders:', rows.length);
+    
+    if (!rows.length) {
+      console.log('[GET /orders/:id] Order not found');
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    
+    // Ownership check: users can only access their own orders unless admin
+    const order = rows[0];
+    console.log('[GET /orders/:id] Order user_id:', order.user_id);
+    const isAdmin = requestUserRole === 'admin';
+    console.log('[GET /orders/:id] Access check:', { 
+      isAdmin: isAdmin,
+      orderUserId: order.user_id,
+      requestUserId: requestUserId,
+      match: order.user_id === requestUserId
+    });
+    
+    if (!isAdmin && order.user_id !== requestUserId) {
+      console.log('[GET /orders/:id] Access denied');
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    
+    // Normalize response: add 'id' field and flatten order_items data
+    const firstItem = order.order_items && order.order_items.length > 0 ? order.order_items[0] : null;
+    const normalized = {
+      ...order,
+      id: order.orders_id, // Add id field for frontend compatibility
+      product: firstItem?.product_snapshot?.product || null,
+      model: firstItem?.product_snapshot?.model || null,
+      size: firstItem?.product_snapshot?.size || null,
+      color: firstItem?.product_snapshot?.color || null,
+      quantity: firstItem?.quantity || null,
+      unit_price: firstItem?.unit_price || null,
+      total_price: order.total || null,
+      sablon_path: firstItem?.sablon_path || null,
+      custom: firstItem?.customization || {}
+    };
+    
+    console.log('[GET /orders/:id] Returning normalized order');
+    res.json(normalized);
   } catch (err) {
     console.error('[ORDERS/:id] axios error', err && err.response ? { status: err.response.status, data: err.response.data } : err.message)
     res.status(500).json({ error: err.message });
@@ -156,7 +284,7 @@ router.get('/orders/:id', async (req, res) => {
 });
 
 // Simple proxy endpoints for order_addresses and payments for admin UI
-router.get('/order_addresses', async (req, res) => {
+router.get('/order_addresses', verifyToken, requireAdmin, async (req, res) => {
   try {
     const q = req.query || {}
     let query = supabase.from('order_addresses').select('*')
@@ -169,7 +297,7 @@ router.get('/order_addresses', async (req, res) => {
   }
 })
 
-router.get('/payments', async (req, res) => {
+router.get('/payments', verifyToken, requireAdmin, async (req, res) => {
   try {
     const q = req.query || {}
     let query = supabase.from('payments').select('*')
@@ -183,38 +311,113 @@ router.get('/payments', async (req, res) => {
 })
 
 // Create order (used by frontend: POST /api/server/orders)
-router.post('/server/orders', upload.single('file'), async (req, res) => {
+router.post('/server/orders', verifyToken, upload.single('file'), async (req, res) => {
+  console.log('[ORDER] === New order creation request ===');
+  console.log('[ORDER] Timestamp:', new Date().toISOString());
+  console.log('[ORDER] Headers:', { 
+    'content-type': req.headers['content-type'],
+    'authorization': req.headers.authorization ? 'Bearer <present>' : 'missing'
+  });
+  console.log('[ORDER] Body fields:', Object.keys(req.body));
+  console.log('[ORDER] Body data:', JSON.stringify(req.body, null, 2));
+  console.log('[ORDER] File:', req.file ? { 
+    fieldname: req.file.fieldname, 
+    originalname: req.file.originalname, 
+    mimetype: req.file.mimetype, 
+    size: req.file.size 
+  } : 'no file');
+  console.log('[ORDER] User from token:', req.user ? JSON.stringify(req.user, null, 2) : 'no user');
+
   try {
-    // authenticate
-    const auth = req.headers.authorization || '';
-    const m = auth.match(/^Bearer\s+(.*)$/i);
-    if (!m) return res.status(401).json({ error: 'Missing Authorization header' });
-    const token = m[1];
-    let payload = null;
-  try { payload = jwt.verify(token, JWT_SECRET); } catch (_e) { return res.status(401).json({ error: 'Invalid token' }); }
-    const userId = payload && (payload.user_id || payload.users_id || payload.id || payload.sub) ? (payload.user_id || payload.users_id || payload.id || payload.sub) : null;
-    if (!userId) return res.status(401).json({ error: 'Invalid token payload (no user id)' });
+    // User is already authenticated via middleware
+    console.log('[ORDER] Step 1: Validating authentication...');
+    const userId = req.user && req.user.users_id ? req.user.users_id : (req.user && req.user.user_id ? req.user.user_id : null);
+    console.log('[ORDER] Authenticated userId:', userId);
+    if (!userId) {
+      console.error('[ORDER] ERROR: No user id available on req.user');
+      console.error('[ORDER] req.user contents:', req.user);
+      return res.status(401).json({ 
+        error: 'Authentication required',
+        details: 'User ID not found in token'
+      });
+    }
+    console.log('[ORDER] ✓ Authentication validated');
 
     // validate body
+    console.log('[ORDER] Step 2: Validating request body...');
     const { product, model, size, color, address, phone, quantity, unit_price, total_price, deadline, custom } = req.body;
-    if (!product || !model || !req.file) return res.status(400).json({ error: 'product, model and file are required' });
+    console.log('[ORDER] Extracted fields:', { 
+      product, 
+      model, 
+      size, 
+      color, 
+      quantity, 
+      unit_price, 
+      total_price,
+      hasCustom: !!custom,
+      customType: typeof custom,
+      customValue: custom
+    });
+    
+    if (!product || !model || !req.file) {
+      console.error('[ORDER] ERROR: Validation failed:', { 
+        hasProduct: !!product, 
+        hasModel: !!model, 
+        hasFile: !!req.file 
+      });
+      return res.status(400).json({ 
+        error: 'product, model and file are required',
+        details: {
+          product: product ? 'present' : 'missing',
+          model: model ? 'present' : 'missing',
+          file: req.file ? 'present' : 'missing'
+        }
+      });
+    }
+    console.log('[ORDER] ✓ Validation passed');
 
     // upload file to Supabase Storage
+    console.log('[ORDER] Step 3: Uploading file to Supabase Storage...');
     const file = req.file;
     const ext = (file.originalname && file.originalname.split('.').pop()) || 'jpg';
     const path = `users/${userId}/sablons/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
     const contentType = file.mimetype || 'application/octet-stream';
+    console.log('[ORDER] Storage path:', path);
+    console.log('[ORDER] Content type:', contentType);
+    console.log('[ORDER] File buffer size:', file.buffer ? file.buffer.length : 0);
+    console.log('[ORDER] Supabase client initialized:', !!supabase);
+    console.log('[ORDER] Upload bucket:', UPLOAD_BUCKET);
 
-    if (!supabase) return res.status(500).json({ error: 'Supabase client not initialized' });
+    if (!supabase) {
+      console.error('[ORDER] ERROR: Supabase client not initialized!');
+      console.error('[ORDER] Environment variables:', {
+        hasSupabaseUrl: !!process.env.SUPABASE_URL || !!process.env.VITE_SUPABASE_URL,
+        hasSupabaseKey: !!process.env.SUPABASE_KEY || !!process.env.VITE_SUPABASE_ANON_KEY
+      });
+      return res.status(500).json({ 
+        error: 'Database connection not available',
+        details: 'Supabase client not initialized. Check environment variables.'
+      });
+    }
 
     const { data: upData, error: upErr } = await supabase.storage.from(UPLOAD_BUCKET).upload(path, file.buffer, { contentType });
     if (upErr) {
-      console.error('[ORDER] storage upload error', upErr)
-      return res.status(500).json({ error: 'Failed to upload file' });
+      console.error('[ORDER] ERROR: Storage upload failed');
+      console.error('[ORDER] Storage error:', JSON.stringify(upErr, null, 2));
+      console.error('[ORDER] Storage error details:', {
+        message: upErr.message,
+        statusCode: upErr.statusCode,
+        error: upErr.error
+      });
+      return res.status(500).json({ 
+        error: 'Failed to upload file',
+        details: upErr.message || 'Storage upload error'
+      });
     }
+    console.log('[ORDER] ✓ File uploaded successfully:', upData);
 
-  // Prefer users_id (uuid) when present — some schemas use users_id as PK
     try {
+      console.log('[ORDER] Step 4: Creating order in database...');
       const orderObj = {
         user_id: userId,
         status: 'created',
@@ -224,15 +427,33 @@ router.post('/server/orders', upload.single('file'), async (req, res) => {
         deadline: deadline || null,
         payment_status: 'pending'
       };
+      console.log('[ORDER] Order object:', JSON.stringify(orderObj, null, 2));
+      
       const { data: orderInsert, error: orderErr } = await supabase.from('orders').insert([orderObj]).select().maybeSingle();
       if (orderErr || !orderInsert) {
-        console.error('[ORDER] insert order error', orderErr)
+        console.error('[ORDER] ERROR: Insert order failed');
+        console.error('[ORDER] Order error:', JSON.stringify(orderErr, null, 2));
+        console.error('[ORDER] Order insert data:', orderInsert);
+        console.error('[ORDER] Error details:', {
+          message: orderErr?.message,
+          details: orderErr?.details,
+          hint: orderErr?.hint,
+          code: orderErr?.code
+        });
         // cleanup uploaded file
-        await supabase.storage.from(UPLOAD_BUCKET).remove([upData.path]).catch(() => {});
-        return res.status(500).json({ error: 'Failed to create order' });
+        console.log('[ORDER] Cleaning up uploaded file:', upData.path);
+        await supabase.storage.from(UPLOAD_BUCKET).remove([upData.path]).catch((e) => {
+          console.warn('[ORDER] Failed to cleanup file:', e);
+        });
+        return res.status(500).json({ 
+          error: 'Failed to create order',
+          details: orderErr?.message || 'Database insert failed'
+        });
       }
+      console.log('[ORDER] ✓ Order created successfully:', { orders_id: orderInsert.orders_id });
 
       // optionally insert delivery/billing address
+      console.log('[ORDER] Step 5: Inserting order address (optional)...');
       try {
         if (address || phone) {
           const addrObj = {
@@ -240,68 +461,150 @@ router.post('/server/orders', upload.single('file'), async (req, res) => {
             address: address || null,
             phone: phone || null
           };
-          await supabase.from('order_addresses').insert([addrObj]).catch(() => {});
+          console.log('[ORDER] Address object:', JSON.stringify(addrObj, null, 2));
+          const { error: addrErr } = await supabase.from('order_addresses').insert([addrObj]);
+          if (addrErr) {
+            console.warn('[ORDER] WARNING: Failed to insert address:', JSON.stringify(addrErr, null, 2));
+          } else {
+            console.log('[ORDER] ✓ Address inserted successfully');
+          }
+        } else {
+          console.log('[ORDER] No address/phone provided, skipping');
         }
-  } catch (_e) {
+      } catch (_e) {
         // non-fatal: log but continue
-        console.warn('[ORDER] failed to insert order_addresses', e && e.message ? e.message : e);
+        console.warn('[ORDER] WARNING: Exception inserting order_addresses:', _e && _e.message ? _e.message : _e);
+      }
+
+      // Parse custom field with better error handling
+      console.log('[ORDER] Step 5.5: Parsing custom field...');
+      let customData = {};
+      if (custom) {
+        try {
+          // Handle both string and object cases
+          if (typeof custom === 'string') {
+            const trimmed = custom.trim();
+            if (trimmed && trimmed !== 'null' && trimmed !== 'undefined') {
+              customData = JSON.parse(trimmed);
+              // Ensure it's an object, not null or other primitive
+              if (customData === null || typeof customData !== 'object' || Array.isArray(customData)) {
+                console.warn('[ORDER] WARNING: custom parsed to non-object:', typeof customData, customData);
+                customData = {};
+              }
+            }
+          } else if (typeof custom === 'object' && custom !== null) {
+            customData = custom;
+          }
+          console.log('[ORDER] ✓ Custom data parsed:', JSON.stringify(customData, null, 2));
+        } catch (parseErr) {
+          console.error('[ORDER] ERROR: Failed to parse custom field');
+          console.error('[ORDER] Custom value:', custom);
+          console.error('[ORDER] Parse error:', parseErr.message);
+          // Continue with empty object rather than failing
+          customData = {};
+        }
+      } else {
+        console.log('[ORDER] No custom data provided');
       }
 
       // insert into order_items (lightweight snapshot)
+      console.log('[ORDER] Step 6: Creating order item...');
       const itemObj = {
         order_id: orderInsert.orders_id,
         product_snapshot: { product: product, model: model, size: size, color: color },
         quantity: quantity ? Number(quantity) : 1,
         unit_price: unit_price ? Number(unit_price) : 0,
-        customization: custom ? JSON.parse(custom || '{}') : {},
+        customization: customData,
         calculated_price: total_price ? Number(total_price) : (unit_price ? Number(unit_price) * (Number(quantity || 1)) : 0),
         sablon_path: upData.path,
         color_id: null
       };
+      console.log('[ORDER] Item object:', JSON.stringify(itemObj, null, 2));
+      
       const { data: itemInsert, error: itemErr } = await supabase.from('order_items').insert([itemObj]).select().maybeSingle();
       if (itemErr || !itemInsert) {
-        console.error('[ORDER] insert item error', itemErr)
+        console.error('[ORDER] ERROR: Insert item failed');
+        console.error('[ORDER] Item error:', JSON.stringify(itemErr, null, 2));
+        console.error('[ORDER] Item insert data:', itemInsert);
+        console.error('[ORDER] Error details:', {
+          message: itemErr?.message,
+          details: itemErr?.details,
+          hint: itemErr?.hint,
+          code: itemErr?.code
+        });
         // cleanup: delete uploaded file and delete order
-        await supabase.from('orders').delete().eq('orders_id', orderInsert.orders_id).catch(() => {});
-        return res.status(500).json({ error: 'Failed to create order item' });
+        console.log('[ORDER] Cleaning up: deleting order and file');
+        await supabase.from('orders').delete().eq('orders_id', orderInsert.orders_id).catch((e) => {
+          console.warn('[ORDER] Failed to delete order:', e);
+        });
+        await supabase.storage.from(UPLOAD_BUCKET).remove([upData.path]).catch((e) => {
+          console.warn('[ORDER] Failed to cleanup file:', e);
+        });
+        return res.status(500).json({ 
+          error: 'Failed to create order item',
+          details: itemErr?.message || 'Database insert failed'
+        });
       }
+      console.log('[ORDER] ✓ Order item created successfully:', { items_id: itemInsert.items_id });
 
       // compute public URL (simple public URL; depending on bucket visibility)
+      console.log('[ORDER] Step 7: Getting public URL for uploaded file...');
       let publicUrl = null;
       try {
         const { data: pu } = supabase.storage.from(UPLOAD_BUCKET).getPublicUrl(upData.path);
         publicUrl = pu && pu.publicUrl ? pu.publicUrl : null;
-  } catch (_e) { /* ignore */ }
+        console.log('[ORDER] ✓ Public URL:', publicUrl);
+      } catch (_e) { 
+        console.warn('[ORDER] WARNING: Failed to get public URL:', _e && _e.message ? _e.message : _e);
+      }
 
       // Return created order in a frontend-friendly shape (id field)
       const out = {
         order: Object.assign({}, orderInsert, { id: orderInsert.orders_id, sablon_path: upData.path, sablon_url: publicUrl, item: itemInsert })
       };
+      console.log('[ORDER] === Order creation successful ===');
+      console.log('[ORDER] Response:', { order_id: out.order.id, status: out.order.status });
       return res.status(201).json(out);
     } catch (err) {
-      console.error('[ORDER] unexpected error', err)
+      console.error('[ORDER] === Unexpected error in order creation ===');
+      console.error('[ORDER] Error name:', err.name);
+      console.error('[ORDER] Error message:', err.message);
+      console.error('[ORDER] Error stack:', err.stack);
+      console.error('[ORDER] Full error object:', JSON.stringify(err, Object.getOwnPropertyNames(err), 2));
       // cleanup upload
-      await supabase.storage.from(UPLOAD_BUCKET).remove([upData.path]).catch(() => {});
-      return res.status(500).json({ error: 'Server error' });
+      if (upData && upData.path) {
+        console.log('[ORDER] Cleaning up uploaded file:', upData.path);
+        await supabase.storage.from(UPLOAD_BUCKET).remove([upData.path]).catch((e) => {
+          console.warn('[ORDER] Failed to cleanup file:', e);
+        });
+      }
+      // Return more details in development
+      const isDev = process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'dev';
+      return res.status(500).json({ 
+        error: 'Server error during order creation',
+        details: isDev ? err.message : 'An internal error occurred',
+        ...(isDev && { stack: err.stack })
+      });
     }
   } catch (err) {
-    console.error('[server/orders] handler error', err)
-    return res.status(500).json({ error: err.message || String(err) });
+    console.error('[ORDER] === Handler-level error ===');
+    console.error('[ORDER] Error:', err);
+    console.error('[ORDER] Error stack:', err.stack);
+    console.error('[ORDER] Full error object:', JSON.stringify(err, Object.getOwnPropertyNames(err), 2));
+    const isDev = process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'dev';
+    return res.status(500).json({ 
+      error: 'Server error',
+      details: isDev ? err.message || String(err) : 'An internal error occurred',
+      ...(isDev && { stack: err.stack })
+    });
   }
 });
 
 // Upload payment proof and create a payments row
-router.post('/server/orders/:id/payment', upload.single('file'), async (req, res) => {
+router.post('/server/orders/:id/payment', verifyToken, upload.single('file'), async (req, res) => {
   try {
-    // authenticate
-    const auth = req.headers.authorization || '';
-    const m = auth.match(/^Bearer\s+(.*)$/i);
-    if (!m) return res.status(401).json({ error: 'Missing Authorization header' });
-    const token = m[1];
-    let payload = null;
-  try { payload = jwt.verify(token, JWT_SECRET); } catch (_e) { return res.status(401).json({ error: 'Invalid token' }); }
-    const userId = payload && (payload.user_id || payload.users_id || payload.id || payload.sub) ? (payload.user_id || payload.users_id || payload.id || payload.sub) : null;
-    if (!userId) return res.status(401).json({ error: 'Invalid token payload (no user id)' });
+  // User is already authenticated via middleware
+  const userId = req.user?.users_id || req.user?.user_id || null;
 
     const orderId = req.params.id;
     if (!orderId) return res.status(400).json({ error: 'order id required' });
@@ -358,19 +661,10 @@ router.post('/server/orders/:id/payment', upload.single('file'), async (req, res
 });
 
 // Update order status and record history (admin only)
-router.put('/server/orders/:id/status', async (req, res) => {
+router.put('/server/orders/:id/status', verifyToken, requireAdmin, async (req, res) => {
   try {
-    const auth = req.headers.authorization || '';
-    const m = auth.match(/^Bearer\s+(.*)$/i);
-    if (!m) return res.status(401).json({ error: 'Missing Authorization header' });
-    const token = m[1];
-    let payload = null;
-  try { payload = jwt.verify(token, JWT_SECRET); } catch (_e) { return res.status(401).json({ error: 'Invalid token' }); }
-    const userId = payload && (payload.user_id || payload.users_id || payload.id || payload.sub) ? (payload.user_id || payload.users_id || payload.id || payload.sub) : null;
-    const role = payload && payload.role ? payload.role : 'customer';
-    if (!userId) return res.status(401).json({ error: 'Invalid token payload (no user id)' });
-
-    if (role !== 'admin') return res.status(403).json({ error: 'Admin role required' });
+  // User is already authenticated via middleware
+  const userId = req.user?.users_id || req.user?.user_id || null;
 
     const orderId = req.params.id;
     const { status, note } = req.body;
@@ -408,7 +702,7 @@ router.put('/server/orders/:id/status', async (req, res) => {
       if (req.body && req.body.payment_status) {
         await supabase.from('payments').update({ status: req.body.payment_status }).eq('order_id', orderId).catch(() => {});
       }
-  } catch (_e) { /* non-fatal */ }
+    } catch (_e) { /* non-fatal */ }
 
     return res.json({ order: updatedOrder, history: histIns || null });
   } catch (err) {

@@ -52,8 +52,50 @@ export function decodeToken(token) {
   }
 }
 
+// Check if token is expired or expiring soon
+export function isTokenExpired(token) {
+  const payload = decodeToken(token)
+  if (!payload || !payload.exp) return true
+  const now = Math.floor(Date.now() / 1000)
+  return payload.exp <= now
+}
+
+// Check if token is expiring soon (within 5 minutes)
+export function isTokenExpiringSoon(token) {
+  const payload = decodeToken(token)
+  if (!payload || !payload.exp) return true
+  const now = Math.floor(Date.now() / 1000)
+  const fiveMinutes = 5 * 60
+  return payload.exp <= (now + fiveMinutes)
+}
+
+// Get current user from token with automatic expiration checking
 export function getCurrentUser() {
   const t = getToken()
   if (!t) return null
+  
+  // Check if token is expired
+  if (isTokenExpired(t)) {
+    handleAuthError('TOKEN_EXPIRED')
+    return null
+  }
+  
   return decodeToken(t)
+}
+
+// Centralized auth error handling
+export function handleAuthError(code) {
+  console.warn('[auth] Auth error:', code)
+  
+  // Clear invalid/expired tokens
+  if (code === 'TOKEN_EXPIRED' || code === 'INVALID_TOKEN') {
+    clearToken()
+    clearSupabaseSession()
+  }
+  
+  // Optionally redirect to login or emit event
+  if (typeof window !== 'undefined') {
+    const event = new CustomEvent('auth-error', { detail: { code } })
+    window.dispatchEvent(event)
+  }
 }

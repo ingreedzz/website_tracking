@@ -1,0 +1,10 @@
+services:
+  vuerouter:
+    image: vuerouter
+    build:
+      context: node_modules/vue-router
+      dockerfile: ./Dockerfile
+    environment:
+      NODE_ENV: production
+    ports:
+      - 3000:3000

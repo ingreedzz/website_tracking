@@ -109,8 +109,8 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="o in orders" :key="o.id">
-              <td class="p-2 border">{{ o.id }}</td>
+            <tr v-for="o in orders" :key="o.id || o.orders_id">
+              <td class="p-2 border">{{ o.id || o.orders_id }}</td>
               <td class="p-2 border">{{ o.product }}</td>
               <td class="p-2 border">{{ o.model }}</td>
               <td class="p-2 border">{{ o.size }}</td>
@@ -129,7 +129,7 @@
                     <div v-else>-</div>
                   </td>
                   <td class="p-2 border">
-                    <button @click="goToDetail(o.id)" class="px-2 py-1 bg-blue-500 text-white rounded">View</button>
+                    <button @click="goToDetail(o.id || o.orders_id)" class="px-2 py-1 bg-blue-500 text-white rounded">View</button>
                   </td>
             </tr>
           </tbody>
@@ -145,6 +145,7 @@ import { ref, onMounted, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase, getProfile } from '../lib/supabase'
 import { getCurrentUser, getToken, decodeToken, clearToken, getSupabaseAccessToken } from '../lib/auth'
+import { apiGet, apiPostFormData } from '../lib/api'
 
 export default {
   name: 'Dashboard',
@@ -206,41 +207,51 @@ export default {
     }
 
     async function load() {
+      console.log('[Dashboard] === Loading orders ===');
       loading.value = true
       const payload = getCurrentUser() || decodeToken(getToken())
       if (!payload) {
-        // not logged in
+        console.log('[Dashboard] User not logged in');
         loading.value = false
         return
       }
-      // token payload may have different property names for id (user_id, sub, or id)
-  const uid = payload.users_id || payload.user_id || payload.sub || payload.id || null
+      console.log('[Dashboard] User payload:', { users_id: payload.users_id, role: payload.role });
+      
+      // Use users_id from token
+      const uid = payload.users_id || null
       if (!uid) {
+        console.error('[Dashboard] No users_id in token');
         loading.value = false
         return
       }
       userId.value = uid
       // prefer the role from token; fallback to profiles table
       isAdmin.value = payload.is_admin || payload.role === 'admin'
+      console.log('[Dashboard] User role:', { isAdmin: isAdmin.value });
 
-      const token = getToken()
-      if (!token) {
-        loading.value = false
-        return
-      }
-
-      if (isAdmin.value) {
-        // Admin: fetch all orders
-        const resp = await fetch('/api/orders', { headers: { 'Authorization': `Bearer ${token}` } })
-        if (!resp.ok) throw new Error('Failed to fetch orders')
-        orders.value = await resp.json()
-      } else {
-        // User: fetch own orders
-        const resp = await fetch('/api/orders', { headers: { 'Authorization': `Bearer ${token}` } })
-        if (!resp.ok) throw new Error('Failed to fetch orders')
-        orders.value = await resp.json()
+      try {
+        // Use different endpoint based on role
+        const endpoint = isAdmin.value ? '/orders' : '/user/orders';
+        console.log('[Dashboard] Fetching orders from', endpoint);
+        
+        // Use API helper for authenticated request
+        orders.value = await apiGet(endpoint)
+        console.log('[Dashboard] Orders loaded:', orders.value.length);
+        if (orders.value.length > 0) {
+          console.log('[Dashboard] First order sample:', {
+            id: orders.value[0].id,
+            orders_id: orders.value[0].orders_id,
+            product: orders.value[0].product,
+            status: orders.value[0].status
+          });
+        }
+      } catch (err) {
+        console.error('[Dashboard] Failed to fetch orders', err)
+        console.error('[Dashboard] Error details:', err.message);
+        alert(err.message || 'Failed to load orders')
       }
       loading.value = false
+      console.log('[Dashboard] === Load complete ===');
     }
 
     function resetForm() {
@@ -270,19 +281,26 @@ export default {
     }
 
     async function handleCreate() {
+      console.log('[FRONTEND] === Starting order creation ===');
       try {
-        if (!userId.value) throw new Error('Not logged in')
-        // require a sablon image
-        if (!fileRef.value) throw new Error('Sablon image is required')
-
-        // get access token from our local storage (app-managed JWT), fall back to Supabase access token
-        let accessToken = getToken()
-        if (!accessToken) {
-          const sb = getSupabaseAccessToken()
-          if (sb) accessToken = sb
+        if (!userId.value) {
+          console.error('[FRONTEND] User not logged in');
+          throw new Error('Not logged in');
         }
-        if (!accessToken) throw new Error('No access token available')
+        console.log('[FRONTEND] User ID:', userId.value);
+        
+        // require a sablon image
+        if (!fileRef.value) {
+          console.error('[FRONTEND] No sablon image selected');
+          throw new Error('Sablon image is required');
+        }
+        console.log('[FRONTEND] Sablon file:', { 
+          name: fileRef.value.name, 
+          type: fileRef.value.type, 
+          size: fileRef.value.size 
+        });
 
+        // Build form data
         const fd = new FormData()
         fd.append('product', form.product || '')
         fd.append('model', form.model || '')
@@ -290,56 +308,70 @@ export default {
         fd.append('color', form.color || '')
         fd.append('address', form.address || '')
         fd.append('phone', form.phone || '')
-  fd.append('quantity', String(form.quantity || 1))
-  const unitPrice = unitPriceForModel(form.model) || 0
-  const total = unitPrice * (Number(form.quantity || 1))
-  fd.append('unit_price', String(unitPrice))
-  fd.append('total_price', String(total))
-  fd.append('order_date', new Date().toISOString())
-  if (form.deadline) fd.append('deadline', form.deadline)
-  fd.append('payment_method', 'bank')
-  fd.append('custom', JSON.stringify(form.custom || {}))
-  if (fileRef.value) fd.append('file', fileRef.value)
+        fd.append('quantity', String(form.quantity || 1))
+        const unitPrice = unitPriceForModel(form.model) || 0
+        const total = unitPrice * (Number(form.quantity || 1))
+        fd.append('unit_price', String(unitPrice))
+        fd.append('total_price', String(total))
+        fd.append('order_date', new Date().toISOString())
+        if (form.deadline) fd.append('deadline', form.deadline)
+        fd.append('payment_method', 'bank')
+        fd.append('custom', JSON.stringify(form.custom || {}))
+        if (fileRef.value) fd.append('file', fileRef.value)
 
-        const resp = await fetch('/api/server/orders', {
-          method: 'POST',
-          headers: {
-            Authorization: 'Bearer ' + accessToken
-          },
-          body: fd
-        })
-        if (!resp.ok) {
-          let errBody = null
-          try { errBody = await resp.json() } catch (e) { /* ignore */ }
-          throw new Error((errBody && errBody.error) ? errBody.error : 'Server error: ' + resp.status)
-        }
-        const json = await resp.json()
+        console.log('[FRONTEND] Sending POST /server/orders via apiPostFormData...');
+        // Use API helper for authenticated request (handles Authorization)
+        const json = await apiPostFormData('/server/orders', fd)
         const created = json.order
         if (created) {
-          orders.value.unshift(created)
+          console.log('[FRONTEND] Order created:', { id: created.id, status: created.status });
+          orders.value.unshift(created);
           // preload public url for the newly created order's sablon image
-          try { await preloadPublicUrls([created]) } catch (e) { /* ignore */ }
-        }
-        alert('Order created (server upload)')
-        // redirect user to payment page for this order so they can upload proof (SPA navigation)
-        if (created && created.id) {
-          try {
-            await router.push({ name: 'Payment', query: { order: created.id } })
-          } catch (e) {
-            console.warn('[handleCreate] router.push to Payment failed', e)
+          try { await preloadPublicUrls([created]); } catch (e) { 
+            console.warn('[FRONTEND] Failed to preload public URL:', e);
           }
-          return
         }
-        viewMode.value = 'list'
+        alert('Order created (server upload)');
+        // redirect user to payment page for this order so they can upload proof (SPA navigation)
+        if (created && (created.id || created.orders_id)) {
+          const orderId = created.id || created.orders_id;
+          console.log('[FRONTEND] Redirecting to payment page for order:', orderId);
+          try {
+            await router.push({ name: 'Payment', query: { order: String(orderId) } });
+            console.log('[FRONTEND] Navigation to Payment successful');
+            return;
+          } catch (e) {
+            console.warn('[FRONTEND] router.push to Payment failed:', e.message || e);
+            console.warn('[FRONTEND] Falling back to list view');
+          }
+        } else {
+          console.warn('[FRONTEND] No valid order ID for navigation, staying on list view');
+        }
+        viewMode.value = 'list';
         // reset UI
-        resetForm()
+        resetForm();
+        console.log('[FRONTEND] === Order creation complete ===');
       } catch (err) {
-        console.error('[handleCreate] error', err)
-        alert(err.message || String(err))
+        console.error('[FRONTEND] === Order creation failed ===');
+        console.error('[FRONTEND] Error:', err);
+        console.error('[FRONTEND] Error message:', err.message);
+        console.error('[FRONTEND] Error stack:', err.stack);
+        alert(err.message || String(err));
       }
     }
 
-  function goToDetail(id) { try { router.push({ name: 'OrderDetail', params: { id } }) } catch (e) { console.warn('[goToDetail] router.push failed', e) } }
+  function goToDetail(id) { 
+    console.log('[goToDetail] Navigating to order detail:', id);
+    if (!id) {
+      console.error('[goToDetail] No order ID provided');
+      return;
+    }
+    try { 
+      router.push({ name: 'OrderDetail', params: { id: String(id) } }) 
+    } catch (e) { 
+      console.error('[goToDetail] router.push failed', e);
+    } 
+  }
     function trackOrder(id) { alert('Track order ' + id) }
 
     async function getPublicPreview(path) {
