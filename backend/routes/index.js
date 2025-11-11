@@ -135,7 +135,9 @@ router.get('/users', verifyToken, requireAdmin, async (req, res) => {
 
 router.get('/orders', verifyToken, requireAdmin, async (req, res) => {
   console.log('[GET /orders] Fetching all orders for admin');
-  console.log('[GET /orders] User:', { users_id: req.user.users_id, role: req.user.role });
+  const requestUserId = req.user?.users_id || req.user?.user_id || null;
+  const requestUserRole = req.user?.role || null;
+  console.log('[GET /orders] User:', { users_id: requestUserId, role: requestUserRole });
   try {
     if (!REST_BASE) return res.status(500).json({ error: 'Supabase not configured' })
     // include related order_items in the response for admin UI
@@ -174,9 +176,11 @@ router.get('/orders', verifyToken, requireAdmin, async (req, res) => {
 // User-specific orders endpoint (no admin required)
 router.get('/user/orders', verifyToken, async (req, res) => {
   console.log('[GET /user/orders] Fetching orders for user');
-  console.log('[GET /user/orders] User:', { users_id: req.user.users_id, role: req.user.role });
+  const requestUserId = req.user?.users_id || req.user?.user_id || null;
+  const requestUserRole = req.user?.role || null;
+  console.log('[GET /user/orders] User:', { users_id: requestUserId, role: requestUserRole });
   try {
-    const userId = req.user.users_id;
+  const userId = req.user?.users_id || req.user?.user_id || null;
     if (!userId) {
       console.error('[GET /user/orders] No user ID');
       return res.status(401).json({ error: 'User ID not found' });
@@ -223,7 +227,9 @@ router.get('/orders/:id', verifyToken, async (req, res) => {
     const id = req.params.id;
     if (!id) return res.status(400).json({ error: 'order id required' });
     console.log('[GET /orders/:id] Order ID:', id);
-    console.log('[GET /orders/:id] User:', { users_id: req.user.users_id, role: req.user.role });
+    const requestUserId = req.user?.users_id || req.user?.user_id || null;
+    const requestUserRole = req.user?.role || null;
+    console.log('[GET /orders/:id] User:', { users_id: requestUserId, role: requestUserRole });
     
     if (!REST_BASE) return res.status(500).json({ error: 'Supabase not configured' })
     const url = `${REST_BASE}/orders?orders_id=eq.${encodeURIComponent(id)}&select=*,order_items(*)`;
@@ -240,14 +246,15 @@ router.get('/orders/:id', verifyToken, async (req, res) => {
     // Ownership check: users can only access their own orders unless admin
     const order = rows[0];
     console.log('[GET /orders/:id] Order user_id:', order.user_id);
+    const isAdmin = requestUserRole === 'admin';
     console.log('[GET /orders/:id] Access check:', { 
-      isAdmin: req.user.role === 'admin',
+      isAdmin: isAdmin,
       orderUserId: order.user_id,
-      requestUserId: req.user.users_id,
-      match: order.user_id === req.user.users_id
+      requestUserId: requestUserId,
+      match: order.user_id === requestUserId
     });
     
-    if (req.user.role !== 'admin' && order.user_id !== req.user.users_id) {
+    if (!isAdmin && order.user_id !== requestUserId) {
       console.log('[GET /orders/:id] Access denied');
       return res.status(403).json({ error: 'Access denied' });
     }
@@ -596,8 +603,8 @@ router.post('/server/orders', verifyToken, upload.single('file'), async (req, re
 // Upload payment proof and create a payments row
 router.post('/server/orders/:id/payment', verifyToken, upload.single('file'), async (req, res) => {
   try {
-    // User is already authenticated via middleware
-    const userId = req.user.users_id;
+  // User is already authenticated via middleware
+  const userId = req.user?.users_id || req.user?.user_id || null;
 
     const orderId = req.params.id;
     if (!orderId) return res.status(400).json({ error: 'order id required' });
@@ -656,8 +663,8 @@ router.post('/server/orders/:id/payment', verifyToken, upload.single('file'), as
 // Update order status and record history (admin only)
 router.put('/server/orders/:id/status', verifyToken, requireAdmin, async (req, res) => {
   try {
-    // User is already authenticated via middleware
-    const userId = req.user.users_id;
+  // User is already authenticated via middleware
+  const userId = req.user?.users_id || req.user?.user_id || null;
 
     const orderId = req.params.id;
     const { status, note } = req.body;

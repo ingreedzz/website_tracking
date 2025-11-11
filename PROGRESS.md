@@ -377,3 +377,14 @@ Summary of work completed in this session:
 - Created backup branch `backup/copilot-remove-user-id-field-0b89b90` before merge.
 
 *Next: verify end-to-end flow locally and in Render staging; then remove backup branch if everything is OK.*
+
+---
+
+### November 11, 2025 - Hotfix: Defensive req.user access
+
+Small but critical production fix deployed to the working branch prior to merge:
+
+- Replaced direct `req.user.*` accesses with optional chaining (`req.user?.users_id` / `req.user?.role`) in `backend/routes/index.js` to avoid runtime ReferenceError when `req.user` is unexpectedly undefined. This prevents 500 crashes such as "ReferenceError: e is not defined" seen in Render logs during order creation and order detail retrieval.
+- Added local sanity checks and safer variable extraction (requestUserId/requestUserRole) for access checks and logs.
+
+Status: committed locally in branch `copilot/add-debug-logs-and-fix-issues` and ready to push/redeploy to Render for verification.
