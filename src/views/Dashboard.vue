@@ -235,20 +235,46 @@ export default {
         console.log('[Dashboard] Fetching orders from', endpoint);
         
         // Use API helper for authenticated request
-        orders.value = await apiGet(endpoint)
+        let orderData;
+        try {
+          orderData = await apiGet(endpoint);
+        } catch (apiErr) {
+          console.error('[Dashboard] API request failed');
+          console.error('[Dashboard] Error name:', apiErr.name);
+          console.error('[Dashboard] Error message:', apiErr.message);
+          
+          // Provide user-friendly error messages based on error type
+          if (apiErr.message.includes('502')) {
+            throw new Error('Server is temporarily unavailable. Please try again in a moment.');
+          } else if (apiErr.message.includes('504')) {
+            throw new Error('Request timeout. The server took too long to respond.');
+          } else if (apiErr.message.includes('Authentication')) {
+            throw new Error('Your session has expired. Please log in again.');
+          } else {
+            throw new Error('Failed to load orders: ' + apiErr.message);
+          }
+        }
+        
+        orders.value = orderData || [];
         console.log('[Dashboard] Orders loaded:', orders.value.length);
+        
         if (orders.value.length > 0) {
           console.log('[Dashboard] First order sample:', {
             id: orders.value[0].id,
             orders_id: orders.value[0].orders_id,
             product: orders.value[0].product,
-            status: orders.value[0].status
+            model: orders.value[0].model,
+            status: orders.value[0].status,
+            payment_status: orders.value[0].payment_status
           });
+        } else {
+          console.log('[Dashboard] No orders found for user');
         }
       } catch (err) {
         console.error('[Dashboard] Failed to fetch orders', err)
         console.error('[Dashboard] Error details:', err.message);
         alert(err.message || 'Failed to load orders')
+        orders.value = []; // Ensure orders is an empty array on error
       }
       loading.value = false
       console.log('[Dashboard] === Load complete ===');
