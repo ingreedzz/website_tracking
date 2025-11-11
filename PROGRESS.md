@@ -9,6 +9,72 @@
 
 ## 📅 Recent timeline
 
+### November 11, 2025 - Enhanced Debug Logging and Error Handling for Order Creation
+
+**Critical Improvements Made:**
+1. **Enhanced Debug Logging**: Added comprehensive step-by-step logging throughout the order creation endpoint
+2. **Better Error Messages**: Changed generic "Server error" to specific error messages with details
+3. **Improved JSON Parsing**: Added robust error handling for custom field JSON parsing
+4. **Environment Validation**: Added checks for Supabase client initialization with detailed error reporting
+5. **Development Mode Details**: Error responses now include stack traces in development mode
+
+**Backend Changes (`backend/routes/index.js`):**
+- **Authentication Logging**: Added detailed logs for user authentication and token validation
+- **Request Validation**: Enhanced validation logging with specific field checks and error details
+- **File Upload Logging**: Added comprehensive logging for Supabase Storage operations
+  - Logs bucket name, storage path, content type, file size
+  - Includes detailed error information on upload failure
+- **Database Operation Logging**: Enhanced all database operations with:
+  - Full error object serialization using `JSON.stringify` with property names
+  - Structured logging with error details (message, details, hint, code)
+  - Success confirmations with ✓ symbols for easy visual scanning
+- **Custom Field Parsing**: Improved JSON.parse with:
+  - Type checking (string vs object)
+  - Null/undefined handling
+  - Validation that parsed result is an object (not null, array, or primitive)
+  - Fallback to empty object on parse errors
+- **Error Response Improvements**:
+  - Replaced generic `{ error: "Server error" }` with specific error messages
+  - Added `details` field with actionable information
+  - Environment-aware error responses (more details in development)
+  - Stack traces included in development mode
+
+**Testing & Validation:**
+- ✅ Syntax validation passed (Node.js -c)
+- ✅ Vite build successful (307.87 KB bundle)
+- ✅ Favicon correctly copied to dist folder
+- ✅ No breaking changes to existing functionality
+
+**Files Modified:**
+- `backend/routes/index.js` - Enhanced logging and error handling for order creation endpoint
+- `dist/` - Rebuilt frontend assets
+
+**Debug Log Structure:**
+Each order creation request now logs:
+1. Step 1: Authentication validation (user ID extraction and verification)
+2. Step 2: Request body validation (required fields check)
+3. Step 3: File upload to Supabase Storage (with path, size, content type)
+4. Step 4: Order creation in database (with full order object)
+5. Step 5: Order address insertion (optional, with warning on failure)
+6. Step 5.5: Custom field parsing (with type checking and error recovery)
+7. Step 6: Order item creation (with full item object)
+8. Step 7: Public URL generation for uploaded file
+
+**Error Handling Improvements:**
+- All database errors now include: message, details, hint, and error code
+- Failed operations include cleanup actions (file removal, order deletion)
+- Non-fatal errors (address insertion, public URL generation) log warnings but don't fail the request
+- Development mode returns detailed error information for debugging
+- Production mode returns user-friendly error messages
+
+**Next Steps:**
+1. Deploy backend changes to Render to enable enhanced logging
+2. Monitor Render logs for detailed debug output on next order submission attempt
+3. Use enhanced error messages to diagnose and fix any remaining issues
+4. Consider adding request ID for easier log correlation across services
+
+---
+
 ### November 10, 2025 - Fix Vercel SPA Routing Issues
 
 **Critical Issues Fixed:**
