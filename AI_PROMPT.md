@@ -10,7 +10,9 @@ You are working on **website_tracking** - A modern web application
 
 **Framework:** Vue.js  
 **Setup Date:** November 10, 2025  
-
+**Frontend Deploy:**  Vercel
+**Backend Deploy:**  Render
+**Database:**  Supabase
 
 ---
 
