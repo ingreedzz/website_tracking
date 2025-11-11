@@ -333,14 +333,19 @@ export default {
         }
         alert('Order created (server upload)');
         // redirect user to payment page for this order so they can upload proof (SPA navigation)
-        if (created && created.id) {
-          console.log('[FRONTEND] Redirecting to payment page for order:', created.id);
+        if (created && (created.id || created.orders_id)) {
+          const orderId = created.id || created.orders_id;
+          console.log('[FRONTEND] Redirecting to payment page for order:', orderId);
           try {
-            await router.push({ name: 'Payment', query: { order: created.id } });
+            await router.push({ name: 'Payment', query: { order: String(orderId) } });
+            console.log('[FRONTEND] Navigation to Payment successful');
+            return;
           } catch (e) {
-            console.warn('[FRONTEND] router.push to Payment failed:', e);
+            console.warn('[FRONTEND] router.push to Payment failed:', e.message || e);
+            console.warn('[FRONTEND] Falling back to list view');
           }
-          return;
+        } else {
+          console.warn('[FRONTEND] No valid order ID for navigation, staying on list view');
         }
         viewMode.value = 'list';
         // reset UI

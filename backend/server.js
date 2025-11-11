@@ -4,6 +4,7 @@ const path = require('path');
 require('dotenv').config();
 const { checkDatabaseConnection } = require('./utils/database');
 const { initSupabase } = require('./utils/supabase');
+const { logError, errorHandler, notFoundHandler } = require('./middleware/error');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -41,6 +42,13 @@ app.use((req, res, next) => {
 // API routes
 const apiRoutes = require('./routes/index');
 app.use('/api', apiRoutes);
+
+// 404 handler for API routes (must come after all API routes)
+app.use(notFoundHandler);
+
+// Error handling middleware (must come after all routes)
+app.use(logError);
+app.use(errorHandler);
 
 // Serve static files from the public folder
 app.use(express.static(path.join(__dirname, '../public')));

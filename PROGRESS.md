@@ -9,6 +9,81 @@
 
 ## 📅 Recent timeline
 
+### November 11, 2025 - Centralized Error Handling Middleware and Defensive Programming
+
+**Critical Improvements Made:**
+1. **Centralized Error Middleware**: Created unified error handling middleware for consistent error responses across all endpoints
+2. **Structured Error Logging**: All errors now logged with comprehensive context (method, path, user, timestamp, stack trace)
+3. **404 Handler**: Added specific handler for API routes that don't exist
+4. **Defensive Router Navigation**: Improved frontend navigation with better error handling and fallback behavior
+5. **Error Response Standardization**: Consistent error format with codes and environment-aware details
+
+**Backend Changes:**
+- **`backend/middleware/error.js`** (NEW):
+  - `logError()` - Comprehensive error logging with request context
+  - `errorHandler()` - Structured JSON error responses with environment-aware details
+  - `notFoundHandler()` - Catches non-existent API routes (404)
+  - Error type detection (ValidationError, UnauthorizedError, ForbiddenError, NotFoundError)
+  - Development mode includes stack traces, production mode shows user-friendly messages
+  
+- **`backend/server.js`**:
+  - Integrated error middleware in correct order (after all routes)
+  - Added 404 handler for API routes
+  - Maintains SPA fallback for non-API routes
+
+**Frontend Changes:**
+- **`src/views/Dashboard.vue`**:
+  - Improved `handleCreate()` to handle both `id` and `orders_id` fields defensively
+  - Added explicit string conversion for route parameters
+  - Enhanced error logging with fallback behavior
+  - Navigation now gracefully falls back to list view on failure
+  - Added warning when order ID is missing
+
+**Testing & Validation:**
+- ✅ Backend syntax validation passed (Node.js -c on error.js and server.js)
+- ✅ Vite build successful (308.13 KB bundle, gzip: 93.22 kB)
+- ✅ No breaking changes to existing functionality
+- ✅ Error middleware properly ordered in Express middleware stack
+- ✅ Server startup successful with error middleware integrated
+- ✅ 404 handler working correctly for non-existent API routes
+- ✅ Error logging middleware captures full request context
+- ✅ CodeQL security scan passed with 0 alerts
+
+**Files Modified:**
+- `backend/middleware/error.js` - Created centralized error handling middleware
+- `backend/server.js` - Integrated error middleware
+- `src/views/Dashboard.vue` - Enhanced defensive programming for router navigation
+- `dist/` - Rebuilt frontend assets
+
+**Error Handling Structure:**
+Each error now includes:
+1. HTTP status code (400, 401, 403, 404, 500)
+2. Error message (user-friendly)
+3. Error code (VALIDATION_ERROR, UNAUTHORIZED, FORBIDDEN, NOT_FOUND, INTERNAL_ERROR)
+4. Details field (environment-aware: full details in dev, minimal in production)
+5. Stack trace (development mode only)
+
+**Middleware Order (Critical for Express):**
+```
+1. CORS and JSON parsing
+2. Request logger
+3. API routes (/api/*)
+4. 404 handler (for API routes)
+5. Error logging middleware
+6. Error response middleware
+7. Static file serving
+8. SPA fallback
+```
+
+**Next Steps:**
+1. Deploy backend changes to Render to enable centralized error handling
+2. Test error scenarios: missing auth, invalid routes, database errors
+3. Monitor Render logs for structured error output
+4. Verify defensive navigation works in production
+5. Run code review and security scan
+
+---
+
 ### November 11, 2025 - Enhanced Debug Logging and Error Handling for Order Creation
 
 **Critical Improvements Made:**
