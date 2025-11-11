@@ -306,42 +306,68 @@ router.get('/payments', verifyToken, requireAdmin, async (req, res) => {
 // Create order (used by frontend: POST /api/server/orders)
 router.post('/server/orders', verifyToken, upload.single('file'), async (req, res) => {
   console.log('[ORDER] === New order creation request ===');
+  console.log('[ORDER] Timestamp:', new Date().toISOString());
   console.log('[ORDER] Headers:', { 
     'content-type': req.headers['content-type'],
     'authorization': req.headers.authorization ? 'Bearer <present>' : 'missing'
   });
   console.log('[ORDER] Body fields:', Object.keys(req.body));
-  console.log('[ORDER] Body data:', req.body);
+  console.log('[ORDER] Body data:', JSON.stringify(req.body, null, 2));
   console.log('[ORDER] File:', req.file ? { 
     fieldname: req.file.fieldname, 
     originalname: req.file.originalname, 
     mimetype: req.file.mimetype, 
     size: req.file.size 
   } : 'no file');
+  console.log('[ORDER] User from token:', req.user ? JSON.stringify(req.user, null, 2) : 'no user');
 
   try {
     // User is already authenticated via middleware
+    console.log('[ORDER] Step 1: Validating authentication...');
     const userId = req.user && req.user.users_id ? req.user.users_id : (req.user && req.user.user_id ? req.user.user_id : null);
     console.log('[ORDER] Authenticated userId:', userId);
     if (!userId) {
-      console.error('[ORDER] No user id available on req.user');
-      return res.status(401).json({ error: 'Authentication required' });
+      console.error('[ORDER] ERROR: No user id available on req.user');
+      console.error('[ORDER] req.user contents:', req.user);
+      return res.status(401).json({ 
+        error: 'Authentication required',
+        details: 'User ID not found in token'
+      });
     }
+    console.log('[ORDER] ✓ Authentication validated');
 
     // validate body
     console.log('[ORDER] Step 2: Validating request body...');
     const { product, model, size, color, address, phone, quantity, unit_price, total_price, deadline, custom } = req.body;
-    console.log('[ORDER] Extracted fields:', { product, model, size, color, quantity, unit_price, total_price });
+    console.log('[ORDER] Extracted fields:', { 
+      product, 
+      model, 
+      size, 
+      color, 
+      quantity, 
+      unit_price, 
+      total_price,
+      hasCustom: !!custom,
+      customType: typeof custom,
+      customValue: custom
+    });
     
     if (!product || !model || !req.file) {
-      console.error('[ORDER] Validation failed:', { 
+      console.error('[ORDER] ERROR: Validation failed:', { 
         hasProduct: !!product, 
         hasModel: !!model, 
         hasFile: !!req.file 
       });
-      return res.status(400).json({ error: 'product, model and file are required' });
+      return res.status(400).json({ 
+        error: 'product, model and file are required',
+        details: {
+          product: product ? 'present' : 'missing',
+          model: model ? 'present' : 'missing',
+          file: req.file ? 'present' : 'missing'
+        }
+      });
     }
-    console.log('[ORDER] Validation passed');
+    console.log('[ORDER] ✓ Validation passed');
 
     // upload file to Supabase Storage
     console.log('[ORDER] Step 3: Uploading file to Supabase Storage...');
@@ -352,18 +378,36 @@ router.post('/server/orders', verifyToken, upload.single('file'), async (req, re
     console.log('[ORDER] Storage path:', path);
     console.log('[ORDER] Content type:', contentType);
     console.log('[ORDER] File buffer size:', file.buffer ? file.buffer.length : 0);
+    console.log('[ORDER] Supabase client initialized:', !!supabase);
+    console.log('[ORDER] Upload bucket:', UPLOAD_BUCKET);
 
     if (!supabase) {
-      console.error('[ORDER] Supabase client not initialized!');
-      return res.status(500).json({ error: 'Supabase client not initialized' });
+      console.error('[ORDER] ERROR: Supabase client not initialized!');
+      console.error('[ORDER] Environment variables:', {
+        hasSupabaseUrl: !!process.env.SUPABASE_URL || !!process.env.VITE_SUPABASE_URL,
+        hasSupabaseKey: !!process.env.SUPABASE_KEY || !!process.env.VITE_SUPABASE_ANON_KEY
+      });
+      return res.status(500).json({ 
+        error: 'Database connection not available',
+        details: 'Supabase client not initialized. Check environment variables.'
+      });
     }
 
     const { data: upData, error: upErr } = await supabase.storage.from(UPLOAD_BUCKET).upload(path, file.buffer, { contentType });
     if (upErr) {
-      console.error('[ORDER] Storage upload error:', upErr);
-      return res.status(500).json({ error: 'Failed to upload file' });
+      console.error('[ORDER] ERROR: Storage upload failed');
+      console.error('[ORDER] Storage error:', JSON.stringify(upErr, null, 2));
+      console.error('[ORDER] Storage error details:', {
+        message: upErr.message,
+        statusCode: upErr.statusCode,
+        error: upErr.error
+      });
+      return res.status(500).json({ 
+        error: 'Failed to upload file',
+        details: upErr.message || 'Storage upload error'
+      });
     }
-    console.log('[ORDER] File uploaded successfully:', upData);
+    console.log('[ORDER] ✓ File uploaded successfully:', upData);
 
     try {
       console.log('[ORDER] Step 4: Creating order in database...');
@@ -376,18 +420,30 @@ router.post('/server/orders', verifyToken, upload.single('file'), async (req, re
         deadline: deadline || null,
         payment_status: 'pending'
       };
-      console.log('[ORDER] Order object:', orderObj);
+      console.log('[ORDER] Order object:', JSON.stringify(orderObj, null, 2));
       
       const { data: orderInsert, error: orderErr } = await supabase.from('orders').insert([orderObj]).select().maybeSingle();
       if (orderErr || !orderInsert) {
-        console.error('[ORDER] Insert order error:', orderErr);
+        console.error('[ORDER] ERROR: Insert order failed');
+        console.error('[ORDER] Order error:', JSON.stringify(orderErr, null, 2));
         console.error('[ORDER] Order insert data:', orderInsert);
+        console.error('[ORDER] Error details:', {
+          message: orderErr?.message,
+          details: orderErr?.details,
+          hint: orderErr?.hint,
+          code: orderErr?.code
+        });
         // cleanup uploaded file
         console.log('[ORDER] Cleaning up uploaded file:', upData.path);
-        await supabase.storage.from(UPLOAD_BUCKET).remove([upData.path]).catch(() => {});
-        return res.status(500).json({ error: 'Failed to create order' });
+        await supabase.storage.from(UPLOAD_BUCKET).remove([upData.path]).catch((e) => {
+          console.warn('[ORDER] Failed to cleanup file:', e);
+        });
+        return res.status(500).json({ 
+          error: 'Failed to create order',
+          details: orderErr?.message || 'Database insert failed'
+        });
       }
-      console.log('[ORDER] Order created successfully:', { orders_id: orderInsert.orders_id });
+      console.log('[ORDER] ✓ Order created successfully:', { orders_id: orderInsert.orders_id });
 
       // optionally insert delivery/billing address
       console.log('[ORDER] Step 5: Inserting order address (optional)...');
@@ -398,15 +454,50 @@ router.post('/server/orders', verifyToken, upload.single('file'), async (req, re
             address: address || null,
             phone: phone || null
           };
-          console.log('[ORDER] Address object:', addrObj);
-          await supabase.from('order_addresses').insert([addrObj]).catch(() => {});
-          console.log('[ORDER] Address inserted successfully');
+          console.log('[ORDER] Address object:', JSON.stringify(addrObj, null, 2));
+          const { error: addrErr } = await supabase.from('order_addresses').insert([addrObj]);
+          if (addrErr) {
+            console.warn('[ORDER] WARNING: Failed to insert address:', JSON.stringify(addrErr, null, 2));
+          } else {
+            console.log('[ORDER] ✓ Address inserted successfully');
+          }
         } else {
           console.log('[ORDER] No address/phone provided, skipping');
         }
       } catch (_e) {
         // non-fatal: log but continue
-        console.warn('[ORDER] Failed to insert order_addresses:', _e && _e.message ? _e.message : _e);
+        console.warn('[ORDER] WARNING: Exception inserting order_addresses:', _e && _e.message ? _e.message : _e);
+      }
+
+      // Parse custom field with better error handling
+      console.log('[ORDER] Step 5.5: Parsing custom field...');
+      let customData = {};
+      if (custom) {
+        try {
+          // Handle both string and object cases
+          if (typeof custom === 'string') {
+            const trimmed = custom.trim();
+            if (trimmed && trimmed !== 'null' && trimmed !== 'undefined') {
+              customData = JSON.parse(trimmed);
+              // Ensure it's an object, not null or other primitive
+              if (customData === null || typeof customData !== 'object' || Array.isArray(customData)) {
+                console.warn('[ORDER] WARNING: custom parsed to non-object:', typeof customData, customData);
+                customData = {};
+              }
+            }
+          } else if (typeof custom === 'object' && custom !== null) {
+            customData = custom;
+          }
+          console.log('[ORDER] ✓ Custom data parsed:', JSON.stringify(customData, null, 2));
+        } catch (parseErr) {
+          console.error('[ORDER] ERROR: Failed to parse custom field');
+          console.error('[ORDER] Custom value:', custom);
+          console.error('[ORDER] Parse error:', parseErr.message);
+          // Continue with empty object rather than failing
+          customData = {};
+        }
+      } else {
+        console.log('[ORDER] No custom data provided');
       }
 
       // insert into order_items (lightweight snapshot)
@@ -416,23 +507,38 @@ router.post('/server/orders', verifyToken, upload.single('file'), async (req, re
         product_snapshot: { product: product, model: model, size: size, color: color },
         quantity: quantity ? Number(quantity) : 1,
         unit_price: unit_price ? Number(unit_price) : 0,
-        customization: custom ? JSON.parse(custom || '{}') : {},
+        customization: customData,
         calculated_price: total_price ? Number(total_price) : (unit_price ? Number(unit_price) * (Number(quantity || 1)) : 0),
         sablon_path: upData.path,
         color_id: null
       };
-      console.log('[ORDER] Item object:', itemObj);
+      console.log('[ORDER] Item object:', JSON.stringify(itemObj, null, 2));
       
       const { data: itemInsert, error: itemErr } = await supabase.from('order_items').insert([itemObj]).select().maybeSingle();
       if (itemErr || !itemInsert) {
-        console.error('[ORDER] Insert item error:', itemErr);
+        console.error('[ORDER] ERROR: Insert item failed');
+        console.error('[ORDER] Item error:', JSON.stringify(itemErr, null, 2));
         console.error('[ORDER] Item insert data:', itemInsert);
+        console.error('[ORDER] Error details:', {
+          message: itemErr?.message,
+          details: itemErr?.details,
+          hint: itemErr?.hint,
+          code: itemErr?.code
+        });
         // cleanup: delete uploaded file and delete order
         console.log('[ORDER] Cleaning up: deleting order and file');
-        await supabase.from('orders').delete().eq('orders_id', orderInsert.orders_id).catch(() => {});
-        return res.status(500).json({ error: 'Failed to create order item' });
+        await supabase.from('orders').delete().eq('orders_id', orderInsert.orders_id).catch((e) => {
+          console.warn('[ORDER] Failed to delete order:', e);
+        });
+        await supabase.storage.from(UPLOAD_BUCKET).remove([upData.path]).catch((e) => {
+          console.warn('[ORDER] Failed to cleanup file:', e);
+        });
+        return res.status(500).json({ 
+          error: 'Failed to create order item',
+          details: itemErr?.message || 'Database insert failed'
+        });
       }
-      console.log('[ORDER] Order item created successfully:', { order_items_id: itemInsert.order_items_id });
+      console.log('[ORDER] ✓ Order item created successfully:', { items_id: itemInsert.items_id });
 
       // compute public URL (simple public URL; depending on bucket visibility)
       console.log('[ORDER] Step 7: Getting public URL for uploaded file...');
@@ -440,9 +546,9 @@ router.post('/server/orders', verifyToken, upload.single('file'), async (req, re
       try {
         const { data: pu } = supabase.storage.from(UPLOAD_BUCKET).getPublicUrl(upData.path);
         publicUrl = pu && pu.publicUrl ? pu.publicUrl : null;
-        console.log('[ORDER] Public URL:', publicUrl);
+        console.log('[ORDER] ✓ Public URL:', publicUrl);
       } catch (_e) { 
-        console.warn('[ORDER] Failed to get public URL:', _e && _e.message ? _e.message : _e);
+        console.warn('[ORDER] WARNING: Failed to get public URL:', _e && _e.message ? _e.message : _e);
       }
 
       // Return created order in a frontend-friendly shape (id field)
@@ -457,18 +563,33 @@ router.post('/server/orders', verifyToken, upload.single('file'), async (req, re
       console.error('[ORDER] Error name:', err.name);
       console.error('[ORDER] Error message:', err.message);
       console.error('[ORDER] Error stack:', err.stack);
+      console.error('[ORDER] Full error object:', JSON.stringify(err, Object.getOwnPropertyNames(err), 2));
       // cleanup upload
       if (upData && upData.path) {
         console.log('[ORDER] Cleaning up uploaded file:', upData.path);
-        await supabase.storage.from(UPLOAD_BUCKET).remove([upData.path]).catch(() => {});
+        await supabase.storage.from(UPLOAD_BUCKET).remove([upData.path]).catch((e) => {
+          console.warn('[ORDER] Failed to cleanup file:', e);
+        });
       }
-      return res.status(500).json({ error: 'Server error' });
+      // Return more details in development
+      const isDev = process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'dev';
+      return res.status(500).json({ 
+        error: 'Server error during order creation',
+        details: isDev ? err.message : 'An internal error occurred',
+        ...(isDev && { stack: err.stack })
+      });
     }
   } catch (err) {
     console.error('[ORDER] === Handler-level error ===');
     console.error('[ORDER] Error:', err);
     console.error('[ORDER] Error stack:', err.stack);
-    return res.status(500).json({ error: err.message || String(err) });
+    console.error('[ORDER] Full error object:', JSON.stringify(err, Object.getOwnPropertyNames(err), 2));
+    const isDev = process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'dev';
+    return res.status(500).json({ 
+      error: 'Server error',
+      details: isDev ? err.message || String(err) : 'An internal error occurred',
+      ...(isDev && { stack: err.stack })
+    });
   }
 });
 
