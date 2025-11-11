@@ -100,6 +100,149 @@ User Details:
 - ⚠️ Use secure password management in production
 - ⚠️ Consider implementing MFA for admin accounts in production
 
+---
+
+### 2. Diagnostic Test (`diagnose.js`)
+
+Comprehensive diagnostic tool that checks the application configuration, database connectivity, and API endpoints.
+
+**Location**: `backend/scripts/diagnose.js`
+
+**Purpose**:
+- Verify environment configuration
+- Test database connectivity
+- Check user accounts and roles
+- Test API endpoints
+- Identify common configuration issues
+
+**Usage**:
+```bash
+# Run basic diagnostics
+node backend/scripts/diagnose.js
+
+# Run with verbose output
+node backend/scripts/diagnose.js --verbose
+node backend/scripts/diagnose.js -v
+```
+
+**What It Checks**:
+
+1. **Environment Variables**
+   - SUPABASE_URL / VITE_SUPABASE_URL
+   - SUPABASE_KEY / VITE_SUPABASE_ANON_KEY
+   - JWT_SECRET
+   - API_URL / VITE_API_URL
+   - NODE_ENV
+
+2. **Database Connection**
+   - Tests connection to Supabase
+   - Verifies API credentials work
+   - Checks for timeout issues
+
+3. **Users Table**
+   - Verifies table exists and is accessible
+   - Lists first 5 users
+   - Shows breakdown of admin vs customer users
+   - Warns if no admin users exist
+
+4. **API Health Endpoint**
+   - Tests `/api/health` endpoint
+   - Verifies server is running
+   - Checks database connectivity from API
+
+5. **Authentication Endpoints**
+   - Tests `/api/register` endpoint accessibility
+   - Tests `/api/login` endpoint accessibility
+   - Verifies routes are properly configured
+
+**Example Output**:
+```
+======================================================================
+Website Tracking - Diagnostic Test
+======================================================================
+
+This script will check the following:
+  ✓ Environment variables
+  ✓ Database connectivity
+  ✓ Users table and user accounts
+  ✓ API health endpoint
+  ✓ Authentication endpoints
+
+─── Environment Variables Check
+✓ SUPABASE_URL / VITE_SUPABASE_URL: https://xxx.supabase.co
+✓ SUPABASE_KEY / VITE_SUPABASE_ANON_KEY: ***xyzw
+✓ JWT_SECRET: ***abcd
+✓ API_URL / VITE_API_URL: http://localhost:3000/api
+✓ NODE_ENV: development
+✓ All required environment variables are set
+
+─── Database Connection Check
+  Testing connection to: https://xxx.supabase.co
+✓ Database connection successful
+
+─── Users Table Check
+✓ Found 3 users in database (showing first 5)
+
+  Breakdown: 1 admin(s), 2 customer(s)
+
+1. admin@test.com (admin)
+   ID: 550e8400...
+   Name: Admin User
+   Created: 2025-11-11T18:00:00.000Z
+2. user@test.com (customer)
+   ID: 7c9e6679...
+   Name: Test User
+   Created: 2025-11-11T17:30:00.000Z
+
+─── API Health Endpoint Check
+  Testing: http://localhost:3000/api/health
+✓ Health endpoint accessible
+  Status: ok
+  Database: connected
+
+─── Authentication Endpoints Check
+  Testing registration endpoint...
+✓ Registration endpoint accessible
+  Testing login endpoint...
+✓ Login endpoint accessible
+
+======================================================================
+Diagnostic Summary
+======================================================================
+
+✓ Environment Variables: PASSED
+✓ Database Connection: PASSED
+✓ Users Table: PASSED
+✓ Health Endpoint: PASSED
+✓ Auth Endpoints: PASSED
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ All diagnostic checks passed! ✓
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Your application appears to be configured correctly.
+
+Next steps:
+  1. Create an admin user: node backend/scripts/create-admin.js
+  2. Start the development server: npm run dev
+  3. Test the application in your browser
+```
+
+**Use Cases**:
+- First-time setup verification
+- Troubleshooting deployment issues
+- Pre-deployment health checks
+- CI/CD pipeline validation
+- Onboarding new developers
+
+**Verbose Mode**:
+- Shows full API responses
+- Includes detailed error messages
+- Displays HTTP status codes
+- Shows request/response data
+
+---
+
 **See Also**:
 - [ADMIN_TESTING_GUIDE.md](../../ADMIN_TESTING_GUIDE.md) - Complete guide for testing admin functionality
 - [PROGRESS.md](../../PROGRESS.md) - Project progress and change history
