@@ -872,7 +872,7 @@ router.post('/server/orders', verifyToken, upload.single('file'), async (req, re
     console.log(`[REQ:${requestId}] [ORDER] ${'─'.repeat(60)}`);
     
     const step2Start = Date.now();
-    const { product, model, size, color, address, phone, quantity, unit_price, total_price, deadline, custom } = req.body;
+    const { product, model, size, color, address, phone, quantity, unit_price, total_price, deadline, custom, customer_name, order_name } = req.body;
     
     console.log(`[REQ:${requestId}] [ORDER] Extracted Fields:`);
     console.log(`[REQ:${requestId}] [ORDER]   product: ${product || 'MISSING'}`);
@@ -886,6 +886,8 @@ router.post('/server/orders', verifyToken, upload.single('file'), async (req, re
     console.log(`[REQ:${requestId}] [ORDER]   custom: ${custom ? `present (type: ${typeof custom})` : 'not set'}`);
     console.log(`[REQ:${requestId}] [ORDER]   address: ${address || 'not set'}`);
     console.log(`[REQ:${requestId}] [ORDER]   phone: ${phone || 'not set'}`);
+    console.log(`[REQ:${requestId}] [ORDER]   customer_name: ${customer_name || 'not set'}`);
+    console.log(`[REQ:${requestId}] [ORDER]   order_name: ${order_name || 'not set'}`);
     
     if (!product || !model || !req.file) {
       console.error(`[REQ:${requestId}] [ORDER] ❌ ERROR: Validation failed`);
@@ -994,6 +996,17 @@ router.post('/server/orders', verifyToken, upload.single('file'), async (req, re
         payment_status: 'pending'
       };
       
+      // Conditionally add customer_name and order_name if provided
+      // These fields will only be included if the DB has the columns
+      if (customer_name) {
+        orderObj.customer_name = customer_name;
+        console.log(`[REQ:${requestId}] [ORDER]   Including customer_name: ${customer_name}`);
+      }
+      if (order_name) {
+        orderObj.order_name = order_name;
+        console.log(`[REQ:${requestId}] [ORDER]   Including order_name: ${order_name}`);
+      }
+      
       console.log(`[REQ:${requestId}] [ORDER] Order Object to Insert:`);
       console.log(`[REQ:${requestId}] [ORDER]   user_id: ${orderObj.user_id}`);
       console.log(`[REQ:${requestId}] [ORDER]   status: ${orderObj.status}`);
@@ -1001,11 +1014,13 @@ router.post('/server/orders', verifyToken, upload.single('file'), async (req, re
       console.log(`[REQ:${requestId}] [ORDER]   order_date: ${orderObj.order_date}`);
       console.log(`[REQ:${requestId}] [ORDER]   deadline: ${orderObj.deadline || 'not set'}`);
       console.log(`[REQ:${requestId}] [ORDER]   payment_status: ${orderObj.payment_status}`);
+      if (orderObj.customer_name) console.log(`[REQ:${requestId}] [ORDER]   customer_name: ${orderObj.customer_name}`);
+      if (orderObj.order_name) console.log(`[REQ:${requestId}] [ORDER]   order_name: ${orderObj.order_name}`);
       
       console.log(`[REQ:${requestId}] [ORDER] Inserting into 'orders' table...`);
       const orderInsertStart = Date.now();
       
-      const { data: orderInsert, error: orderErr } = await supabase.from('orders').insert([orderObj]).select().maybeSingle();
+      let { data: orderInsert, error: orderErr } = await supabase.from('orders').insert([orderObj]).select().maybeSingle();
       
       const orderInsertDuration = Date.now() - orderInsertStart;
       
@@ -1018,19 +1033,62 @@ router.post('/server/orders', verifyToken, upload.single('file'), async (req, re
         console.error(`[REQ:${requestId}] [ORDER] Insert Data: ${orderInsert ? JSON.stringify(orderInsert) : 'null'}`);
         console.error(`[REQ:${requestId}] [ORDER] Full Error:`, JSON.stringify(orderErr, null, 2));
         
-        // cleanup uploaded file
-        console.log(`[REQ:${requestId}] [ORDER] Initiating cleanup of uploaded file: ${upData.path}`);
-        await supabase.storage.from(UPLOAD_BUCKET).remove([upData.path]).catch((e) => {
-          console.warn(`[REQ:${requestId}] [ORDER] WARNING: Failed to cleanup file:`, e.message);
-        });
-        console.log(`[REQ:${requestId}] [ORDER] Cleanup complete`);
+        // Check if error is due to missing columns (customer_name or order_name)
+        const errMsg = orderErr?.message || '';
+        const isMissingColumn = errMsg.includes('column') && (errMsg.includes('customer_name') || errMsg.includes('order_name'));
         
-        return res.status(500).json({ 
-          error: 'Failed to create order',
-          details: orderErr?.message || 'Database insert failed'
-        });
+        if (isMissingColumn && (customer_name || order_name)) {
+          console.warn(`[REQ:${requestId}] [ORDER] ⚠️  WARNING: customer_name/order_name columns don't exist in DB`);
+          console.warn(`[REQ:${requestId}] [ORDER] Retrying without customer_name and order_name...`);
+          
+          // Retry without the new fields
+          const retryOrderObj = {
+            user_id: userId,
+            status: 'created',
+            total: calculatedTotal,
+            notes: null,
+            order_date: new Date().toISOString(),
+            deadline: deadline || null,
+            payment_status: 'pending'
+          };
+          
+          const { data: retryInsert, error: retryErr } = await supabase.from('orders').insert([retryOrderObj]).select().maybeSingle();
+          
+          if (retryErr || !retryInsert) {
+            console.error(`[REQ:${requestId}] [ORDER] ❌ Retry also failed:`, retryErr?.message);
+            
+            // cleanup uploaded file
+            console.log(`[REQ:${requestId}] [ORDER] Initiating cleanup of uploaded file: ${upData.path}`);
+            await supabase.storage.from(UPLOAD_BUCKET).remove([upData.path]).catch((e) => {
+              console.warn(`[REQ:${requestId}] [ORDER] WARNING: Failed to cleanup file:`, e.message);
+            });
+            console.log(`[REQ:${requestId}] [ORDER] Cleanup complete`);
+            
+            return res.status(500).json({ 
+              error: 'Failed to create order',
+              details: retryErr?.message || 'Database insert failed'
+            });
+          }
+          
+          console.log(`[REQ:${requestId}] [ORDER] ✓ Order created successfully (without customer/order names)`);
+          // Continue with retryInsert as orderInsert
+          orderInsert = retryInsert;
+        } else {
+          // cleanup uploaded file
+          console.log(`[REQ:${requestId}] [ORDER] Initiating cleanup of uploaded file: ${upData.path}`);
+          await supabase.storage.from(UPLOAD_BUCKET).remove([upData.path]).catch((e) => {
+            console.warn(`[REQ:${requestId}] [ORDER] WARNING: Failed to cleanup file:`, e.message);
+          });
+          console.log(`[REQ:${requestId}] [ORDER] Cleanup complete`);
+          
+          return res.status(500).json({ 
+            error: 'Failed to create order',
+            details: orderErr?.message || 'Database insert failed'
+          });
+        }
+      } else {
+        console.log(`[REQ:${requestId}] [ORDER] ✓ Order created successfully:`, { orders_id: orderInsert.orders_id });
       }
-      console.log('[ORDER] ✓ Order created successfully:', { orders_id: orderInsert.orders_id });
 
       // optionally insert delivery/billing address
       console.log('[ORDER] Step 5: Inserting order address (optional)...');
@@ -1398,6 +1456,81 @@ router.put('/server/orders/:id/status', verifyToken, requireAdmin, async (req, r
   } catch (err) {
     console.error('[server/orders/:id/status] handler error', err)
     return res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+// Get all models (with size_fields if column exists)
+router.get('/models', async (req, res) => {
+  const requestId = req.id || 'unknown';
+  console.log(`[REQ:${requestId}] [MODELS] === Fetching models ===`);
+  
+  try {
+    if (!REST_BASE) {
+      console.error(`[REQ:${requestId}] [MODELS] REST_BASE not configured`);
+      return res.status(500).json({ 
+        error: 'Database configuration missing',
+        code: 'DB_NOT_CONFIGURED'
+      });
+    }
+    
+    // Try to fetch models with size_fields
+    // If size_fields column doesn't exist, it will be null/undefined
+    console.log(`[REQ:${requestId}] [MODELS] Fetching from database...`);
+    const modelsResp = await axios.get(`${REST_BASE}/models?select=models_id,name,description,size_fields`, {
+      headers: SB_HEADERS,
+      timeout: 10000
+    });
+    
+    const models = modelsResp.data || [];
+    console.log(`[REQ:${requestId}] [MODELS] ✓ Retrieved ${models.length} models`);
+    
+    // Normalize models - ensure size_fields is always an array
+    const normalizedModels = models.map(m => ({
+      id: m.models_id,
+      models_id: m.models_id,
+      name: m.name || 'Unknown Model',
+      description: m.description || '',
+      size_fields: Array.isArray(m.size_fields) ? m.size_fields : []
+    }));
+    
+    res.json(normalizedModels);
+  } catch (err) {
+    console.error(`[REQ:${requestId}] [MODELS] Error:`, err.message);
+    
+    // If the error is about column not existing, return empty size_fields
+    if (err.response && err.response.data && err.response.data.message) {
+      const errMsg = err.response.data.message;
+      if (errMsg.includes('column') && errMsg.includes('size_fields')) {
+        console.warn(`[REQ:${requestId}] [MODELS] size_fields column doesn't exist, falling back`);
+        
+        // Fetch without size_fields column
+        try {
+          const fallbackResp = await axios.get(`${REST_BASE}/models?select=models_id,name,description`, {
+            headers: SB_HEADERS,
+            timeout: 10000
+          });
+          
+          const models = fallbackResp.data || [];
+          const normalizedModels = models.map(m => ({
+            id: m.models_id,
+            models_id: m.models_id,
+            name: m.name || 'Unknown Model',
+            description: m.description || '',
+            size_fields: [] // Empty array when column doesn't exist
+          }));
+          
+          return res.json(normalizedModels);
+        } catch (fallbackErr) {
+          console.error(`[REQ:${requestId}] [MODELS] Fallback also failed:`, fallbackErr.message);
+        }
+      }
+    }
+    
+    res.status(500).json({ 
+      error: 'Failed to fetch models',
+      details: err.message,
+      code: 'MODELS_FETCH_ERROR'
+    });
   }
 });
 

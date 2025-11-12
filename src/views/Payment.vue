@@ -126,9 +126,20 @@ const paymentProofUrl = computed(() => {
 
 function formatOrderDisplay(order) {
   // Format order details for display in dropdown
+  // Priority: order_name > customer_name > product > model > order ID
   if (!order) return 'Unknown Order';
   
   const parts = [];
+  
+  // Add order name if available (highest priority)
+  if (order.order_name && order.order_name !== 'Unknown') {
+    parts.push(order.order_name);
+  }
+  
+  // Add customer name if available
+  if (order.customer_name && order.customer_name !== 'Unknown') {
+    parts.push(order.customer_name);
+  }
   
   // Add product name (primary identifier)
   if (order.product && order.product !== 'Unknown Product') {
