@@ -51,6 +51,14 @@
             <input v-model="form.phone" class="w-full border rounded px-3 py-2" />
           </label>
           <label class="block">
+            <div class="text-sm">Customer Name</div>
+            <input v-model="form.customer_name" placeholder="e.g., John Doe" class="w-full border rounded px-3 py-2" />
+          </label>
+          <label class="block">
+            <div class="text-sm">Order Name</div>
+            <input v-model="form.order_name" placeholder="e.g., School Uniform Batch 1" class="w-full border rounded px-3 py-2" />
+          </label>
+          <label class="block">
             <div class="text-sm">Quantity (lusin)</div>
             <input v-model.number="form.quantity" type="number" min="1" class="w-full border rounded px-3 py-2" />
           </label>
@@ -93,6 +101,8 @@
           <thead>
             <tr class="bg-gray-100">
               <th class="p-2 border">Order ID</th>
+              <th class="p-2 border">Order Name</th>
+              <th class="p-2 border">Customer Name</th>
               <th class="p-2 border">Product</th>
               <th class="p-2 border">Model</th>
               <th class="p-2 border">Size</th>
@@ -111,6 +121,8 @@
           <tbody>
             <tr v-for="o in orders" :key="o.id || o.orders_id">
               <td class="p-2 border">{{ o.id || o.orders_id }}</td>
+              <td class="p-2 border">{{ o.order_name || 'Unknown' }}</td>
+              <td class="p-2 border">{{ o.customer_name || 'Unknown' }}</td>
               <td class="p-2 border">{{ o.product }}</td>
               <td class="p-2 border">{{ o.model }}</td>
               <td class="p-2 border">{{ o.size }}</td>
@@ -158,15 +170,18 @@ export default {
     const userId = ref(null)
     const viewMode = ref('list')
 
-  const form = reactive({ product: '', model: '', size: '', color: '', address: '', phone: '', quantity: 1, custom: {}, deadline: '' })
+  const form = reactive({ product: '', model: '', size: '', color: '', address: '', phone: '', quantity: 1, custom: {}, deadline: '', customer_name: '', order_name: '' })
     const fileRef = ref(null)
     const previewUrl = ref(null)
     const bucketName = 'sablon-images' // make sure this bucket exists in Supabase Storage
 
     const publicUrlCache = {}
 
-    // Model options and their custom fields mapping
-    const modelOptions = [
+    // Model options - will be fetched from backend or use fallback
+    const modelOptions = ref([])
+    
+    // Fallback model options with hardcoded fields (used if backend doesn't have models or size_fields)
+    const fallbackModelOptions = [
       { key: 'SetelanAnakPria', label: 'Setelan Anak Pria', fields: [
         { key: 'lingkar_dada', label: 'Lingkar Dada', type: 'number', unit: 'cm' },
         { key: 'panjang_baju', label: 'Panjang Baju', type: 'number', unit: 'cm' },
@@ -197,12 +212,57 @@ export default {
       ] }
     ]
 
-    // default selected model
-    // ensure form.model is initialized to a valid model
-    if (!form.model) form.model = modelOptions[0].key
+    // Load models from backend
+    async function loadModels() {
+      console.log('[Dashboard] === Loading models from backend ===');
+      try {
+        const models = await apiGet('/models');
+        console.log('[Dashboard] Models loaded:', models.length);
+        
+        if (models && models.length > 0) {
+          // Convert backend models to frontend format
+          modelOptions.value = models.map(m => {
+            // If model has size_fields from DB, use them
+            if (m.size_fields && Array.isArray(m.size_fields) && m.size_fields.length > 0) {
+              return {
+                key: m.name || m.models_id,
+                label: m.name || 'Unknown Model',
+                fields: m.size_fields.map(f => ({
+                  key: f.key || f.name || '',
+                  label: f.label || f.name || '',
+                  type: f.type || 'text',
+                  unit: f.unit || ''
+                }))
+              };
+            } else {
+              // No size_fields, try to match with fallback
+              const fallback = fallbackModelOptions.find(fm => fm.key === m.name || fm.label === m.name);
+              return {
+                key: m.name || m.models_id,
+                label: m.name || 'Unknown Model',
+                fields: fallback ? fallback.fields : []
+              };
+            }
+          });
+          
+          console.log('[Dashboard] Models converted:', modelOptions.value.length);
+        } else {
+          console.warn('[Dashboard] No models from backend, using fallback');
+          modelOptions.value = fallbackModelOptions;
+        }
+      } catch (err) {
+        console.error('[Dashboard] Failed to load models, using fallback:', err.message);
+        modelOptions.value = fallbackModelOptions;
+      }
+      
+      // Ensure form.model is initialized to a valid model
+      if (!form.model && modelOptions.value.length > 0) {
+        form.model = modelOptions.value[0].key;
+      }
+    }
 
     function getFieldsForModel(key) {
-      const m = modelOptions.find(x => x.key === key)
+      const m = modelOptions.value.find(x => x.key === key)
       return m ? m.fields : []
     }
 
@@ -341,6 +401,8 @@ export default {
         fd.append('total_price', String(total))
         fd.append('order_date', new Date().toISOString())
         if (form.deadline) fd.append('deadline', form.deadline)
+        if (form.customer_name) fd.append('customer_name', form.customer_name)
+        if (form.order_name) fd.append('order_name', form.order_name)
         fd.append('payment_method', 'bank')
         fd.append('custom', JSON.stringify(form.custom || {}))
         if (fileRef.value) fd.append('file', fileRef.value)
@@ -510,6 +572,7 @@ export default {
     }
 
     onMounted(async () => {
+      await loadModels()
       await load()
       await preloadPublicUrls(orders.value)
     })
