@@ -1,0 +1,63 @@
+name: Supabase column check and optional smoke tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_smoke:
+        description: 'Run smoke tests after column check (true/false)'
+        required: false
+        default: 'false'
+      smoke_target:
+        description: 'Target base URL for smoke tests (e.g., https://website-tracking.onrender.com)'
+        required: false
+
+jobs:
+  check-columns:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Supabase column check
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          node backend/scripts/check-columns.js
+
+  smoke-tests:
+    needs: check-columns
+    if: ${{ github.event.inputs.run_smoke == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run smoke tests (optional)
+        env:
+          SMOKE_TARGET: ${{ github.event.inputs.smoke_target }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          if [ -z "${SMOKE_TARGET}" ]; then
+            echo "SMOKE_TARGET not provided; aborting smoke tests";
+            exit 1;
+          fi
+          echo "Running smoke tests against ${SMOKE_TARGET}";
+          node smoke-test.js ${SMOKE_TARGET}
