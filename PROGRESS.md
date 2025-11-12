@@ -1,3 +1,151 @@
+### November 12, 2025 - Dynamic Models & Admin Reporting Implementation
+
+**Features Implemented:**
+1. **Dynamic Size Fields**: Models now support database-driven size fields via `models.size_fields` JSONB column
+2. **Customer & Order Names**: Added `customer_name` and `order_name` tracking for orders
+3. **Admin Dashboard Enhancement**: Repurposed dashboard to display customer and order names for better tracking
+4. **Payment Dropdown Enhancement**: Shows descriptive order labels with order name, customer name, and product details
+5. **UI Update**: Removed Sign In button from navbar (route still functional at `/login`)
+
+**Backend Changes:**
+
+**New Endpoint - GET /models:**
+- Fetches models with `size_fields` from database
+- Returns normalized model data: `{ id, models_id, name, description, size_fields: [] }`
+- Gracefully handles missing `size_fields` column with fallback query
+- Returns empty `size_fields` array if column doesn't exist
+- Enables dynamic form rendering based on model configuration
+
+**Enhanced Endpoint - POST /server/orders:**
+- Extracts `customer_name` and `order_name` from request body
+- Conditionally includes these fields in order insert if provided
+- **Retry Logic**: If columns don't exist in DB, automatically retries without them
+- Logs warning when columns are missing but continues order creation
+- Maintains backward compatibility with existing schema
+
+**Frontend Changes:**
+
+**Dashboard.vue:**
+- Added `loadModels()` function to fetch models from `/models` API
+- Renders dynamic size input fields from `models.size_fields`
+- Falls back to hardcoded size fields if backend doesn't provide them
+- Added "Customer Name" input field to order creation form
+- Added "Order Name" input field to order creation form
+- Includes `customer_name` and `order_name` in order submission FormData
+- Enhanced orders table with "Order Name" and "Customer Name" columns
+- Displays "Unknown" fallback for null/missing customer or order names
+- Reactive model options loaded on component mount
+
+**Payment.vue:**
+- Enhanced `formatOrderDisplay()` to prioritize order_name and customer_name
+- Display format: "Order Name • Customer Name • Product • Model • Qty pcs"
+- Much more descriptive than UUID-based display
+- Helps users identify orders quickly in payment dropdown
+
+**Navbar.vue:**
+- Removed "Login" button from UI (per "Sign In button" removal requirement)
+- Login route still fully functional at `/login` (can navigate directly)
+- Comment added noting this is intentional UI-only change
+
+**Utility Script:**
+
+**backend/scripts/check-columns.js:**
+- Checks if required DB columns exist: `models.size_fields`, `orders.customer_name`, `orders.order_name`
+- Returns exit code 0 if all exist, 1 if any missing
+- Provides clear output and SQL commands to add missing columns
+- Useful for deployment verification
+
+**Implementation Details:**
+
+**Conditional Field Handling:**
+- Backend conditionally adds `customer_name` and `order_name` to order object only if provided
+- If DB insert fails due to missing columns, retries without these fields
+- Frontend displays 'Unknown' for null values, never shows `null` or `-` text
+- Models API returns empty `size_fields` array if column doesn't exist
+- No breaking changes - works with or without new DB columns
+
+**Size Fields Format:**
+```json
+[
+  { "key": "lingkar_dada", "label": "Lingkar Dada", "type": "number", "unit": "cm" },
+  { "key": "panjang_baju", "label": "Panjang Baju", "type": "number", "unit": "cm" }
+]
+```
+
+**Testing & Validation:**
+- ✅ Vite build successful (314.05 KB bundle, gzip: 94.67 kB)
+- ✅ Backend syntax validation passed (Node.js -c)
+- ✅ All files compile without errors
+- ✅ Created comprehensive implementation guide (DYNAMIC_MODELS_GUIDE.md)
+- ⚠️ CodeQL: 6 alerts (all pre-existing debug logging patterns, documented in SECURITY_SUMMARY.md)
+- ⚠️ Testing requires DB columns to be added by owner
+
+**Files Modified:**
+- `backend/routes/index.js` - Added `/models` endpoint, enhanced order creation with retry logic (78 lines added)
+- `src/views/Dashboard.vue` - Dynamic models, customer/order name inputs and table columns (95 lines changed)
+- `src/views/Payment.vue` - Enhanced formatOrderDisplay() (10 lines changed)
+- `src/components/Navbar.vue` - Removed Login button (1 line changed)
+- `backend/scripts/check-columns.js` - Column verification utility (118 lines, new file)
+- `DYNAMIC_MODELS_GUIDE.md` - Comprehensive implementation and testing guide (new file)
+- `dist/` - Rebuilt frontend assets
+
+**Database Setup Required (Owner Action):**
+
+Before full functionality works, owner must run these SQL commands in Supabase:
+
+```sql
+ALTER TABLE models ADD COLUMN IF NOT EXISTS size_fields JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_name TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_name TEXT;
+```
+
+**Verification:**
+```bash
+node backend/scripts/check-columns.js
+```
+
+**Expected Behavior:**
+
+**Without DB Columns:**
+- ✅ Application works normally
+- ✅ Models API returns empty size_fields
+- ✅ Hardcoded size fields used
+- ✅ Order creation succeeds (without customer/order names)
+- ✅ Warning logged in server console
+
+**With DB Columns:**
+- ✅ Dynamic size fields render from database
+- ✅ Customer/order names saved with orders
+- ✅ Dashboard displays customer/order names
+- ✅ Payment dropdown shows descriptive labels
+- ✅ Full admin reporting capabilities
+
+**Security Notes:**
+- CodeQL identified 6 tainted-format-string alerts in logging statements
+- All are pre-existing debug logging patterns documented in SECURITY_SUMMARY.md
+- Server-side only, not exposed to clients
+- Standard error logging with `err.message` and `requestId`
+- No new security vulnerabilities introduced
+
+**Documentation:**
+- Created DYNAMIC_MODELS_GUIDE.md with:
+  - Database setup instructions
+  - Features overview
+  - Testing checklist
+  - API documentation
+  - Troubleshooting guide
+  - Example model configuration
+
+**Next Steps:**
+1. Owner adds DB columns via Supabase console
+2. Verify columns with check-columns.js script
+3. Test order creation with customer/order names
+4. Populate models with size_fields data
+5. Deploy backend and frontend together
+6. Monitor Render logs for successful operation
+
+---
+
 ### November 11, 2025 - Admin Testing Clarification and Comprehensive Debugging
 
 **Critical Issues Resolved:**
