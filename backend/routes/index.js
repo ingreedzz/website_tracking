@@ -1534,6 +1534,136 @@ router.get('/models', async (req, res) => {
   }
 });
 
+// POST /models - Create a new model (Admin only)
+router.post('/models', authenticateToken, async (req, res) => {
+  const requestId = req.id || 'unknown';
+  console.log(`[REQ:${requestId}] [MODELS] === Creating new model ===`);
+  
+  try {
+    // Check if user is admin
+    if (req.user?.role !== 'admin') {
+      console.warn(`[REQ:${requestId}] [MODELS] Access denied - not admin`);
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const { name, description, size_fields } = req.body;
+    
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Model name is required' });
+    }
+
+    console.log(`[REQ:${requestId}] [MODELS] Creating model:`, { name, description });
+
+    const payload = {
+      name: name.trim(),
+      description: description || '',
+      size_fields: Array.isArray(size_fields) ? size_fields : []
+    };
+
+    const createResp = await axios.post(`${REST_BASE}/models`, payload, {
+      headers: { ...SB_HEADERS, 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
+      timeout: 10000
+    });
+
+    const newModel = createResp.data?.[0] || createResp.data;
+    console.log(`[REQ:${requestId}] [MODELS] ✓ Model created with ID:`, newModel?.models_id);
+
+    res.status(201).json({
+      id: newModel.models_id,
+      models_id: newModel.models_id,
+      name: newModel.name,
+      description: newModel.description,
+      size_fields: newModel.size_fields || []
+    });
+  } catch (err) {
+    console.error(`[REQ:${requestId}] [MODELS] Error creating model:`, err.message);
+    res.status(500).json({ 
+      error: 'Failed to create model',
+      details: err.message
+    });
+  }
+});
+
+// PUT /models/:id - Update a model (Admin only)
+router.put('/models/:id', authenticateToken, async (req, res) => {
+  const requestId = req.id || 'unknown';
+  const modelId = req.params.id;
+  console.log(`[REQ:${requestId}] [MODELS] === Updating model ${modelId} ===`);
+  
+  try {
+    // Check if user is admin
+    if (req.user?.role !== 'admin') {
+      console.warn(`[REQ:${requestId}] [MODELS] Access denied - not admin`);
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const { name, description, size_fields } = req.body;
+    
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Model name is required' });
+    }
+
+    console.log(`[REQ:${requestId}] [MODELS] Updating model:`, { name, description });
+
+    const payload = {
+      name: name.trim(),
+      description: description || '',
+      size_fields: Array.isArray(size_fields) ? size_fields : []
+    };
+
+    const updateResp = await axios.patch(`${REST_BASE}/models?models_id=eq.${modelId}`, payload, {
+      headers: { ...SB_HEADERS, 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
+      timeout: 10000
+    });
+
+    const updatedModel = updateResp.data?.[0] || updateResp.data;
+    console.log(`[REQ:${requestId}] [MODELS] ✓ Model updated`);
+
+    res.json({
+      id: updatedModel.models_id,
+      models_id: updatedModel.models_id,
+      name: updatedModel.name,
+      description: updatedModel.description,
+      size_fields: updatedModel.size_fields || []
+    });
+  } catch (err) {
+    console.error(`[REQ:${requestId}] [MODELS] Error updating model:`, err.message);
+    res.status(500).json({ 
+      error: 'Failed to update model',
+      details: err.message
+    });
+  }
+});
+
+// DELETE /models/:id - Delete a model (Admin only)
+router.delete('/models/:id', authenticateToken, async (req, res) => {
+  const requestId = req.id || 'unknown';
+  const modelId = req.params.id;
+  console.log(`[REQ:${requestId}] [MODELS] === Deleting model ${modelId} ===`);
+  
+  try {
+    // Check if user is admin
+    if (req.user?.role !== 'admin') {
+      console.warn(`[REQ:${requestId}] [MODELS] Access denied - not admin`);
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    await axios.delete(`${REST_BASE}/models?models_id=eq.${modelId}`, {
+      headers: SB_HEADERS,
+      timeout: 10000
+    });
+
+    console.log(`[REQ:${requestId}] [MODELS] ✓ Model deleted`);
+    res.json({ success: true, message: 'Model deleted successfully' });
+  } catch (err) {
+    console.error(`[REQ:${requestId}] [MODELS] Error deleting model:`, err.message);
+    res.status(500).json({ 
+      error: 'Failed to delete model',
+      details: err.message
+    });
+  }
+});
+
 // Health check endpoint to verify Supabase connectivity
 router.get('/health', async (req, res) => {
   try {
