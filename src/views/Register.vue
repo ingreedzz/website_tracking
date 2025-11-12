@@ -31,33 +31,96 @@ export default {
   },
   methods: {
     async register() {
+      const timestamp = new Date().toISOString()
+      console.log(`[${timestamp}] [REGISTER] === Starting registration process ===`)
+      console.log(`[${timestamp}] [REGISTER] Name: ${this.form.name}`)
+      console.log(`[${timestamp}] [REGISTER] Email: ${this.form.email}`)
+      
       try {
         const apiBase = import.meta.env.VITE_API_URL || ''
-        const resp = await fetch((apiBase.replace(/\/$/, '') || '') + '/api/register', {
+        const registerUrl = (apiBase.replace(/\/$/, '') || '') + '/api/register'
+        console.log(`[${timestamp}] [REGISTER] Step 1: Sending registration request`)
+        console.log(`[${timestamp}] [REGISTER] API Base: ${apiBase || '(using relative path)'}`)
+        console.log(`[${timestamp}] [REGISTER] Register URL: ${registerUrl}`)
+        
+        const requestBody = { 
+          name: this.form.name, 
+          email: this.form.email, 
+          password: this.form.password 
+        }
+        console.log(`[${timestamp}] [REGISTER] Request body (password hidden):`, { 
+          name: this.form.name, 
+          email: this.form.email, 
+          hasPassword: !!this.form.password 
+        })
+        
+        const resp = await fetch(registerUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: this.form.name, email: this.form.email, password: this.form.password })
+          body: JSON.stringify(requestBody)
         })
+        
+        console.log(`[${timestamp}] [REGISTER] Response status: ${resp.status} ${resp.statusText}`)
+        console.log(`[${timestamp}] [REGISTER] Response headers:`, {
+          'content-type': resp.headers.get('content-type'),
+          'content-length': resp.headers.get('content-length')
+        })
+        
         if (!resp.ok) {
+          console.error(`[${timestamp}] [REGISTER] ❌ Registration failed with status ${resp.status}`)
           let data = null
-          try { data = await resp.json() } catch (e) {}
+          try { 
+            data = await resp.json()
+            console.error(`[${timestamp}] [REGISTER] Error response:`, data)
+          } catch (e) {
+            console.error(`[${timestamp}] [REGISTER] Could not parse JSON error:`, e.message)
+          }
           if (data && data.error) throw new Error(data.error)
           throw new Error('Register failed (' + resp.status + ')')
         }
+        
+        console.log(`[${timestamp}] [REGISTER] Step 2: Parsing response JSON`)
         const data = await resp.json().catch(() => null)
+        console.log(`[${timestamp}] [REGISTER] ✓ Response parsed successfully`)
+        console.log(`[${timestamp}] [REGISTER] Response keys:`, data ? Object.keys(data) : [])
+        console.log(`[${timestamp}] [REGISTER] Token present:`, !!(data && data.token))
+        console.log(`[${timestamp}] [REGISTER] User present:`, !!(data && data.user))
+        
         // if backend also returns token, set it and notify
         if (data && data.token) {
+          console.log(`[${timestamp}] [REGISTER] Step 3: Storing token and dispatching event`)
           const { setToken } = await import('../lib/auth')
           setToken(data.token)
+          console.log(`[${timestamp}] [REGISTER] ✓ Token stored`)
+          
           window.dispatchEvent(new Event('auth-change'))
+          console.log(`[${timestamp}] [REGISTER] ✓ Event dispatched`)
+          
           // navigate to dashboard using SPA router only
-          try { this.$router.push({ name: 'Dashboard' }) } catch (e) { console.warn('[register] router.push failed', e) }
+          console.log(`[${timestamp}] [REGISTER] Step 4: Navigating to Dashboard`)
+          try { 
+            await this.$router.push({ name: 'Dashboard' })
+            console.log(`[${timestamp}] [REGISTER] ✓ Navigation successful`)
+          } catch (e) { 
+            console.warn(`[${timestamp}] [REGISTER] ⚠️  router.push failed:`, e)
+          }
         } else {
+          console.log(`[${timestamp}] [REGISTER] No token returned, navigating to Home`)
           alert('Registered successfully')
-          try { this.$router.push({ name: 'Home' }) } catch (e) { console.warn('[register] router.push failed', e) }
+          try { 
+            await this.$router.push({ name: 'Home' })
+            console.log(`[${timestamp}] [REGISTER] ✓ Navigation to Home successful`)
+          } catch (e) { 
+            console.warn(`[${timestamp}] [REGISTER] ⚠️  router.push failed:`, e)
+          }
         }
+        
+        console.log(`[${timestamp}] [REGISTER] === Registration process complete ===`)
       } catch (err) {
-        console.error('[register] error', err)
+        console.error(`[${timestamp}] [REGISTER] === Registration process failed ===`)
+        console.error(`[${timestamp}] [REGISTER] Error type: ${err.name}`)
+        console.error(`[${timestamp}] [REGISTER] Error message: ${err.message}`)
+        console.error(`[${timestamp}] [REGISTER] Error stack:`, err.stack)
         alert(err.message || String(err))
       }
     }
