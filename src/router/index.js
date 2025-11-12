@@ -8,6 +8,7 @@ import OrderDetail from '../views/OrderDetail.vue'
 import Payment from '../views/Payment.vue'
 import AdminDashboard from '../views/AdminDashboard.vue'
 import AdminOrderDetail from '../views/AdminOrderDetail.vue'
+import ModelManagement from '../views/ModelManagement.vue'
 
 const routes = [
   { path: '/', name: 'Home', component: Home },
@@ -16,6 +17,7 @@ const routes = [
   { path: '/payment', name: 'Payment', component: Payment },
   { path: '/admin', name: 'AdminDashboard', component: AdminDashboard },
   { path: '/admin/orders/:id', name: 'AdminOrderDetail', component: AdminOrderDetail, props: true },
+  { path: '/admin/models', name: 'ModelManagement', component: ModelManagement },
   { path: '/login', name: 'Login', component: Login },
   { path: '/orders/:id', name: 'OrderDetail', component: OrderDetail, props: true }
 ]
