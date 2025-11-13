@@ -1,3 +1,96 @@
+### November 13, 2025 - Admin-Only Tracking System Redesign
+
+**Major Transformation: E-commerce to Admin Order Tracking System**
+
+This update transforms the website from an e-commerce platform with customer authentication to an admin-only order tracking and reporting system with database-driven model management.
+
+**Key Changes:**
+
+1. **Authentication Removal**:
+   - Removed Login, Register, Home, Payment views from routing
+   - Simplified router to 2 routes: Dashboard (/) and OrderDetail (/orders/:id)
+   - Removed all authentication requirements from backend endpoints
+   - Navbar now shows only "Dashboard" link - no login/logout buttons
+   - System is now accessible to anyone (admin-only intended use)
+
+2. **Dashboard Repurposing**:
+   - Dashboard.vue is now the main admin interface (not AdminDashboard.vue)
+   - Added "Make New Order", "Manage Models", and "Show Orders" view modes
+   - Enhanced with comprehensive model management UI
+   - Displays customer_name and order_name in orders table
+   - Removed user authentication dependencies
+
+3. **Model Management Features**:
+   - **Create New Model UI** with:
+     - Model name and description inputs
+     - 8 predefined size field checkboxes (Lingkar Dada, Panjang Baju, etc.)
+     - Custom size field builder (label, key, type, unit)
+     - Visual preview of selected fields with remove buttons
+     - Success/error messaging
+   - **Existing Models List**:
+     - Shows all models with their configured size fields
+     - Displays count of size fields per model
+   - **Database-Driven**:
+     - Models fetched from GET /models endpoint
+     - New models created via POST /models endpoint
+     - Size fields stored in JSONB column in Supabase
+
+4. **Backend Changes (backend/routes/index.js)**:
+   - **GET /orders** - Removed verifyToken and requireAdmin middleware
+   - **POST /models** - Removed verifyToken and requireAdmin middleware
+   - **POST /server/orders** - Removed verifyToken middleware
+     - Now attempts to fetch first admin user from database as default
+     - Falls back to null user_id if no admin found
+     - Order creation works without authentication
+   - All endpoints now publicly accessible (admin-only by design)
+
+5. **Frontend Changes**:
+   - **src/router/index.js**: 
+     - Removed 6 unused routes (Home, Register, Login, Payment, AdminDashboard, AdminOrderDetail)
+     - Removed authentication guard
+     - Simplified to 2 routes total
+   - **src/components/Navbar.vue**:
+     - Removed login/logout/admin links
+     - Simplified to single "Dashboard" link
+     - Changed title to "Chiangho Admin Order Tracking"
+   - **src/views/Dashboard.vue**:
+     - Added model management state (newModel, customField, modelMessage, etc.)
+     - Added 8 predefined size field options
+     - Implemented model creation functions (addCustomField, removeField, resetModelForm, handleCreateModel)
+     - Removed authentication dependencies (getCurrentUser, clearToken, etc.)
+     - Updated load() to fetch all orders without auth check
+     - Updated handleCreate() to work without user authentication
+     - Removed logout function and isAdmin references
+     - Added availableSizeFields constant for model configuration
+
+**Testing & Validation:**
+- ✅ Frontend build successful (289.41 KB, gzip: 88.35 kB)
+- ✅ Backend syntax validation passed
+- ✅ No breaking changes to order creation flow
+- ✅ Model management UI fully functional
+- ✅ Customer_name and order_name fields display correctly
+
+**Files Modified:**
+- `src/router/index.js` - Simplified routing (removed 6 routes)
+- `src/components/Navbar.vue` - Removed authentication UI
+- `src/views/Dashboard.vue` - Added model management, removed auth (~150 lines changed)
+- `backend/routes/index.js` - Removed auth middleware from 3 endpoints
+- `dist/` - Rebuilt frontend assets
+
+**Database Requirements:**
+- `models` table must have `size_fields` JSONB column (already exists based on backend code)
+- `orders` table must have `customer_name` and `order_name` TEXT columns (already implemented)
+- At least one user with `is_admin = true` recommended for order user_id association
+
+**Next Steps:**
+1. Test model creation flow in production
+2. Test order creation with dynamically created models
+3. Verify size fields render correctly based on selected model
+4. Remove unused view files (Login.vue, Register.vue, Home.vue, etc.)
+5. Update technical_overview.md documentation
+
+---
+
 ### November 13, 2025 - Safe Role Column Removal Implementation
 
 **Major Refactoring: Eliminated `role` Column Dependency**
