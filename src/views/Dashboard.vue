@@ -5,7 +5,93 @@
       <div class="space-x-2">
         <button @click="viewMode = 'create'" class="px-3 py-2 bg-blue-500 text-white rounded">Make New Order</button>
         <button @click="viewMode = 'list'" class="px-3 py-2 bg-gray-700 text-white rounded">Show Orders</button>
+        <button v-if="isAdmin" @click="viewMode = 'createModel'" class="px-3 py-2 bg-green-600 text-white rounded">Create Model</button>
         <button @click="logout" class="px-3 py-2 bg-red-500 text-white rounded">Log out</button>
+      </div>
+    </div>
+
+    <!-- Create Model (Admin Only) -->
+    <div v-if="viewMode === 'createModel' && isAdmin" class="mb-6 bg-white border-2 border-gray-300 p-6 rounded-lg shadow-md">
+      <h3 class="text-xl font-bold mb-4">Create New Model</h3>
+      
+      <!-- Model Basic Info -->
+      <div class="mb-4">
+        <label class="block text-sm font-medium mb-1">Model Name (required)</label>
+        <input v-model="newModel.name" placeholder="e.g., Kaos Oblong Dewasa" class="w-full border rounded px-3 py-2" />
+      </div>
+      
+      <div class="mb-4">
+        <label class="block text-sm font-medium mb-1">Description</label>
+        <input v-model="newModel.description" placeholder="e.g., Adult t-shirt with custom sizing" class="w-full border rounded px-3 py-2" />
+      </div>
+
+      <!-- Dynamic Size Fields Builder -->
+      <div class="mb-4">
+        <div class="flex items-center justify-between mb-2">
+          <label class="block text-sm font-medium">Size Fields</label>
+          <button @click="addSizeField" type="button" class="px-3 py-1 bg-green-500 text-white text-sm rounded hover:bg-green-600">
+            + Add Field
+          </button>
+        </div>
+
+        <!-- List of Size Fields -->
+        <div v-if="newModel.size_fields.length === 0" class="text-sm text-gray-500 italic p-3 bg-gray-50 rounded">
+          No size fields added yet. Click "+ Add Field" to add custom size fields for this model.
+        </div>
+
+        <div v-for="(field, index) in newModel.size_fields" :key="index" class="mb-3 p-3 bg-gray-50 rounded border">
+          <div class="grid grid-cols-12 gap-2">
+            <div class="col-span-3">
+              <label class="block text-xs text-gray-600 mb-1">Field Key</label>
+              <input v-model="field.key" placeholder="e.g., lingkar_dada" class="w-full border rounded px-2 py-1 text-sm" />
+            </div>
+            <div class="col-span-3">
+              <label class="block text-xs text-gray-600 mb-1">Field Label</label>
+              <input v-model="field.label" placeholder="e.g., Lingkar Dada" class="w-full border rounded px-2 py-1 text-sm" />
+            </div>
+            <div class="col-span-2">
+              <label class="block text-xs text-gray-600 mb-1">Type</label>
+              <select v-model="field.type" class="w-full border rounded px-2 py-1 text-sm">
+                <option value="number">Number</option>
+                <option value="text">Text</option>
+              </select>
+            </div>
+            <div class="col-span-2">
+              <label class="block text-xs text-gray-600 mb-1">Unit</label>
+              <input v-model="field.unit" placeholder="e.g., cm" class="w-full border rounded px-2 py-1 text-sm" />
+            </div>
+            <div class="col-span-2 flex items-end">
+              <button @click="removeSizeField(index)" type="button" class="w-full px-2 py-1 bg-red-500 text-white text-sm rounded hover:bg-red-600">
+                Remove
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Example -->
+      <div class="mb-4 p-3 bg-blue-50 rounded text-sm">
+        <strong>Example size fields:</strong>
+        <ul class="mt-1 ml-4 list-disc text-xs text-gray-700">
+          <li>Key: lingkar_dada, Label: Lingkar Dada, Type: number, Unit: cm</li>
+          <li>Key: panjang_baju, Label: Panjang Baju, Type: number, Unit: cm</li>
+          <li>Key: panjang_lengan, Label: Panjang Lengan, Type: number, Unit: cm</li>
+        </ul>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="flex items-center space-x-3">
+        <button @click="createModel" type="button" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+          Create Model
+        </button>
+        <button @click="viewMode = 'list'" type="button" class="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">
+          Cancel
+        </button>
+      </div>
+
+      <!-- Status Message -->
+      <div v-if="modelCreateMsg" :class="{'text-green-600': modelCreateMsg.includes('success'), 'text-red-600': !modelCreateMsg.includes('success')}" class="mt-3 text-sm font-medium">
+        {{ modelCreateMsg }}
       </div>
     </div>
 
@@ -157,7 +243,7 @@ import { ref, onMounted, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase, getProfile } from '../lib/supabase'
 import { getCurrentUser, getToken, decodeToken, clearToken, getSupabaseAccessToken } from '../lib/auth'
-import { apiGet, apiPostFormData } from '../lib/api'
+import { apiGet, apiPostFormData, apiPost } from '../lib/api'
 
 export default {
   name: 'Dashboard',
@@ -176,6 +262,14 @@ export default {
     const bucketName = 'sablon-images' // make sure this bucket exists in Supabase Storage
 
     const publicUrlCache = {}
+
+    // Model creation state
+    const newModel = ref({ 
+      name: '', 
+      description: '', 
+      size_fields: [] 
+    })
+    const modelCreateMsg = ref('')
 
     // Model options - will be fetched from backend or use fallback
     const modelOptions = ref([])
@@ -637,6 +731,145 @@ export default {
       try { await router.push({ name: 'Home' }) } catch (e) { console.warn('[logout] router.push failed', e) }
     }
 
+    // Model management functions
+    function addSizeField() {
+      console.log('[Dashboard] ========================================');
+      console.log('[Dashboard] addSizeField called');
+      console.log('[Dashboard] Current size_fields count:', newModel.value.size_fields.length);
+      
+      const newField = {
+        key: '',
+        label: '',
+        type: 'number',
+        unit: 'cm'
+      };
+      
+      newModel.value.size_fields.push(newField);
+      
+      console.log('[Dashboard] New size_fields count:', newModel.value.size_fields.length);
+      console.log('[Dashboard] Added field:', newField);
+      console.log('[Dashboard] ========================================');
+    }
+
+    function removeSizeField(index) {
+      console.log('[Dashboard] ========================================');
+      console.log('[Dashboard] removeSizeField called');
+      console.log('[Dashboard] Removing field at index:', index);
+      console.log('[Dashboard] Current size_fields count:', newModel.value.size_fields.length);
+      
+      if (index >= 0 && index < newModel.value.size_fields.length) {
+        const removed = newModel.value.size_fields[index];
+        console.log('[Dashboard] Field being removed:', removed);
+        newModel.value.size_fields.splice(index, 1);
+        console.log('[Dashboard] ✓ Field removed successfully');
+      } else {
+        console.error('[Dashboard] ❌ Invalid index:', index);
+      }
+      
+      console.log('[Dashboard] New size_fields count:', newModel.value.size_fields.length);
+      console.log('[Dashboard] ========================================');
+    }
+
+    async function createModel() {
+      console.log('[Dashboard] ========================================');
+      console.log('[Dashboard] === Creating new model ===');
+      console.log('[Dashboard] Timestamp:', new Date().toISOString());
+      console.log('[Dashboard] Current model data:', JSON.stringify(newModel.value, null, 2));
+      
+      try {
+        // Step 1: Validate model name
+        console.log('[Dashboard] Step 1: Validating model name');
+        if (!newModel.value.name || !newModel.value.name.trim()) {
+          console.error('[Dashboard] ❌ Model name is required');
+          modelCreateMsg.value = 'Model name is required'
+          return
+        }
+        console.log('[Dashboard] ✓ Model name valid:', newModel.value.name);
+
+        // Step 2: Validate and filter size fields
+        console.log('[Dashboard] Step 2: Validating size fields');
+        console.log('[Dashboard] Total size fields:', newModel.value.size_fields.length);
+        
+        const sizeFields = newModel.value.size_fields.filter(f => {
+          const isValid = !!(f.key && f.label);
+          console.log('[Dashboard] Field validation:', {
+            key: f.key || '(empty)',
+            label: f.label || '(empty)',
+            type: f.type,
+            unit: f.unit,
+            isValid
+          });
+          return isValid;
+        });
+        
+        console.log('[Dashboard] Valid size fields:', sizeFields.length);
+        
+        // Warn if some fields are incomplete
+        if (sizeFields.length < newModel.value.size_fields.length) {
+          const incomplete = newModel.value.size_fields.length - sizeFields.length;
+          console.warn(`[Dashboard] ⚠️  ${incomplete} incomplete fields will be removed`);
+        }
+
+        // Step 3: Prepare payload
+        console.log('[Dashboard] Step 3: Preparing API payload');
+        const payload = { 
+          name: newModel.value.name.trim(), 
+          description: newModel.value.description.trim() || null
+        };
+        
+        // Only include size_fields if there are valid fields
+        if (sizeFields.length > 0) {
+          payload.size_fields = sizeFields;
+          console.log('[Dashboard] Including size_fields in payload:', sizeFields.length);
+        } else {
+          console.log('[Dashboard] No valid size_fields to include');
+        }
+        
+        console.log('[Dashboard] Payload prepared:', JSON.stringify(payload, null, 2));
+
+        // Step 4: Send API request
+        console.log('[Dashboard] Step 4: Sending POST /models request');
+        const created = await apiPost('/models', payload);
+        
+        console.log('[Dashboard] ✓ Model created successfully!');
+        console.log('[Dashboard] Created model:', JSON.stringify(created, null, 2));
+        
+        // Step 5: Update UI
+        console.log('[Dashboard] Step 5: Updating UI');
+        modelCreateMsg.value = `✓ Model "${newModel.value.name}" created successfully with ${sizeFields.length} size fields!`;
+        console.log('[Dashboard] Success message set:', modelCreateMsg.value);
+        
+        // Step 6: Reload models to update dropdown
+        console.log('[Dashboard] Step 6: Reloading models list');
+        await loadModels();
+        
+        // Step 7: Auto-close and refresh
+        console.log('[Dashboard] Step 7: Scheduling auto-close (2 seconds)');
+        setTimeout(() => {
+          console.log('[Dashboard] Auto-close timeout triggered');
+          newModel.value = { name: '', description: '', size_fields: [] };
+          viewMode.value = 'list';
+          modelCreateMsg.value = '';
+          console.log('[Dashboard] Form reset and closed');
+        }, 2000);
+        
+        console.log('[Dashboard] === Model creation complete ===');
+        console.log('[Dashboard] ========================================');
+      } catch (err) {
+        console.error('[Dashboard] ========================================');
+        console.error('[Dashboard] ❌ Model creation failed');
+        console.error('[Dashboard] Error name:', err.name);
+        console.error('[Dashboard] Error message:', err.message);
+        console.error('[Dashboard] Error stack:', err.stack);
+        console.error('[Dashboard] Full error:', err);
+        
+        modelCreateMsg.value = '❌ Failed to create model: ' + (err.message || err);
+        console.error('[Dashboard] Error message set:', modelCreateMsg.value);
+        console.error('[Dashboard] === Model creation failed ===');
+        console.error('[Dashboard] ========================================');
+      }
+    }
+
     // small initialization: preload public urls for existing orders
     async function preloadPublicUrls(list) {
       for (const o of list) {
@@ -680,7 +913,12 @@ export default {
       unitPriceForModel,
       totalPrice,
       formatNumber,
-      logout
+      logout,
+      newModel,
+      modelCreateMsg,
+      addSizeField,
+      removeSizeField,
+      createModel
     }
   }
 }
