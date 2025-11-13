@@ -1291,6 +1291,16 @@ Summary of work completed in this session:
 *Last Updated: 2025-11-10T16:55:00Z*  
 *Generated/Updated by AI agent working on the repo — follow the AI Agent Workflow in `AGENTS.md` before commits.*
 
+### November 13, 2025 - PR #22 merged; role-removal migration added
+
+- Merged Pull Request #22 (login/register UI and debug logging) into `main` after resolving minor conflicts in `src/components/Navbar.vue` and `dist/index.html`.
+- Added SQL migration scripts and documentation to safely remove the `role` column from the `users` table:
+  - `backend/database/remove_role_migration.sql` (backup & DROP)
+  - `backend/database/restore_role_migration.sql` (restore from backup)
+  - `backend/database/README_REMOVE_ROLE.md` (instructions & warnings)
+- NOTE: These SQL scripts are manual; the agent did not execute them. Owner/delegated agent must run them in Supabase console after verifying backups.
+
+
 ---
 
 ### November 10, 2025 - Merge update
