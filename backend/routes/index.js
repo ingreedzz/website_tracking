@@ -1354,11 +1354,15 @@ router.post('/server/orders/:id/payment', verifyToken, upload.single('file'), as
     console.log(`[REQ:${requestId}] [PAYMENT]   Method: ${method}`);
     console.log(`[REQ:${requestId}] [PAYMENT]   Notes: ${notes || 'none'}`);
 
+    // Determine payment status based on whether file was uploaded
+    const paymentStatus = req.file ? 'completed' : 'pending';
+    console.log(`[REQ:${requestId}] [PAYMENT]   Payment status: ${paymentStatus} (file ${req.file ? 'present' : 'not present'})`);
+
     const paymentObj = {
       order_id: orderId,
       amount: amount,
       method: method,
-      status: 'pending',
+      status: paymentStatus,
       proof_url: proofPath,
       notes: notes
     };
@@ -1381,12 +1385,12 @@ router.post('/server/orders/:id/payment', verifyToken, upload.single('file'), as
     console.log(`[REQ:${requestId}] [PAYMENT]   Payment ID: ${paymentInsert.payment_id}`);
 
     console.log(`[REQ:${requestId}] [PAYMENT] STEP 5: UPDATING ORDER STATUS`);
-    const { error: updateErr } = await supabase.from('orders').update({ payment_status: 'pending' }).eq('orders_id', orderId);
+    const { error: updateErr } = await supabase.from('orders').update({ payment_status: paymentStatus }).eq('orders_id', orderId);
     
     if (updateErr) {
       console.warn(`[REQ:${requestId}] [PAYMENT] ⚠ WARNING: Failed to update order status`, updateErr.message);
     } else {
-      console.log(`[REQ:${requestId}] [PAYMENT] ✓ Order payment_status updated to 'pending'`);
+      console.log(`[REQ:${requestId}] [PAYMENT] ✓ Order payment_status updated to '${paymentStatus}'`);
     }
     
     // Fetch updated order with items to return complete info
@@ -1503,7 +1507,7 @@ router.get('/models', async (req, res) => {
     
     // Step 2: Fetch models from database
     console.log(`[REQ:${requestId}] [MODELS-GET] Step 2: Fetching models from database`);
-    const fetchUrl = `${REST_BASE}/models?select=models_id,name,description,size_fields`;
+    const fetchUrl = `${REST_BASE}/models?select=models_id,name,description,size_fields,unit_price`;
     console.log(`[REQ:${requestId}] [MODELS-GET] Fetch URL:`, fetchUrl);
     
     const modelsResp = await axios.get(fetchUrl, {
@@ -1541,12 +1545,14 @@ router.get('/models', async (req, res) => {
         models_id: m.models_id,
         name: m.name || 'Unknown Model',
         description: m.description || '',
-        size_fields: Array.isArray(m.size_fields) ? m.size_fields : []
+        size_fields: Array.isArray(m.size_fields) ? m.size_fields : [],
+        unit_price: m.unit_price || null
       };
       console.log(`[REQ:${requestId}] [MODELS-GET]   Normalized model ${idx + 1}:`, {
         id: normalized.id,
         name: normalized.name,
-        size_fields_count: normalized.size_fields.length
+        size_fields_count: normalized.size_fields.length,
+        unit_price: normalized.unit_price
       });
       return normalized;
     });
@@ -1588,7 +1594,8 @@ router.get('/models', async (req, res) => {
             models_id: m.models_id,
             name: m.name || 'Unknown Model',
             description: m.description || '',
-            size_fields: [] // Empty array when column doesn't exist
+            size_fields: [], // Empty array when column doesn't exist
+            unit_price: null
           }));
           
           console.log(`[REQ:${requestId}] [MODELS-GET] ✓ Fallback successful`);
@@ -1624,14 +1631,15 @@ router.post('/models', verifyToken, async (req, res) => {
   try {
     // Step 1: Extract and validate input
     console.log(`[REQ:${requestId}] [MODELS-CREATE] Step 1: Extracting request data`);
-    const { name, description, size_fields } = req.body;
+    const { name, description, size_fields, unit_price } = req.body;
     console.log(`[REQ:${requestId}] [MODELS-CREATE] Input data:`, {
       name: name || '(missing)',
       description: description ? `${description.substring(0, 50)}...` : '(none)',
       size_fields_provided: !!size_fields,
       size_fields_type: typeof size_fields,
       size_fields_is_array: Array.isArray(size_fields),
-      size_fields_length: Array.isArray(size_fields) ? size_fields.length : 'N/A'
+      size_fields_length: Array.isArray(size_fields) ? size_fields.length : 'N/A',
+      unit_price: unit_price || '(not set)'
     });
     
     if (!name || !name.trim()) {
@@ -1670,9 +1678,21 @@ router.post('/models', verifyToken, async (req, res) => {
     } else {
       console.log(`[REQ:${requestId}] [MODELS-CREATE] No size_fields to include in insert`);
     }
+    if (unit_price !== undefined && unit_price !== null && unit_price !== '') {
+      const parsedPrice = Number(unit_price);
+      if (!isNaN(parsedPrice) && parsedPrice >= 0) {
+        insertObj.unit_price = parsedPrice;
+        console.log(`[REQ:${requestId}] [MODELS-CREATE] Including unit_price in insert:`, parsedPrice);
+      } else {
+        console.warn(`[REQ:${requestId}] [MODELS-CREATE] ⚠️  Invalid unit_price provided, skipping:`, unit_price);
+      }
+    } else {
+      console.log(`[REQ:${requestId}] [MODELS-CREATE] No unit_price provided`);
+    }
     console.log(`[REQ:${requestId}] [MODELS-CREATE] Insert object prepared:`, {
       name: insertObj.name,
       has_description: !!insertObj.description,
+      has_unit_price: !!insertObj.unit_price,
       has_size_fields: !!insertObj.size_fields
     });
 
@@ -1750,6 +1770,195 @@ router.post('/models', verifyToken, async (req, res) => {
     console.error(`[REQ:${requestId}] [MODELS-CREATE] Error stack:`, err.stack);
     console.error(`[REQ:${requestId}] [MODELS-CREATE] === Creation failed ===`);
     console.error(`[REQ:${requestId}] [MODELS-CREATE] ========================================`);
+    return res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+// Update an existing model (PATCH /api/models/:id)
+router.patch('/models/:id', verifyToken, async (req, res) => {
+  const requestId = req.id || 'unknown';
+  const userId = req.user?.users_id;
+  const modelId = req.params.id;
+  
+  console.log(`[REQ:${requestId}] [MODELS-UPDATE] ========================================`);
+  console.log(`[REQ:${requestId}] [MODELS-UPDATE] === Updating model ===`);
+  console.log(`[REQ:${requestId}] [MODELS-UPDATE] Timestamp:`, new Date().toISOString());
+  console.log(`[REQ:${requestId}] [MODELS-UPDATE] User:`, { users_id: userId, is_admin: req.user?.is_admin });
+  console.log(`[REQ:${requestId}] [MODELS-UPDATE] Model ID:`, modelId);
+  
+  try {
+    // Step 1: Extract and validate input
+    console.log(`[REQ:${requestId}] [MODELS-UPDATE] Step 1: Extracting request data`);
+    const { name, description, size_fields, unit_price } = req.body;
+    console.log(`[REQ:${requestId}] [MODELS-UPDATE] Input data:`, {
+      name: name || '(not changing)',
+      description: description !== undefined ? (description ? `${description.substring(0, 50)}...` : '(empty)') : '(not changing)',
+      size_fields_provided: size_fields !== undefined,
+      unit_price: unit_price !== undefined ? unit_price : '(not changing)'
+    });
+    
+    if (!modelId) {
+      console.error(`[REQ:${requestId}] [MODELS-UPDATE] ❌ Model ID is required`);
+      return res.status(400).json({ error: 'Model ID is required' });
+    }
+    
+    // Step 2: Prepare update object
+    console.log(`[REQ:${requestId}] [MODELS-UPDATE] Step 2: Preparing update object`);
+    const updateObj = {};
+    
+    if (name !== undefined && name !== null && name.trim()) {
+      updateObj.name = name.trim();
+      console.log(`[REQ:${requestId}] [MODELS-UPDATE] Updating name to:`, updateObj.name);
+    }
+    
+    if (description !== undefined) {
+      updateObj.description = description ? description.trim() : null;
+      console.log(`[REQ:${requestId}] [MODELS-UPDATE] Updating description`);
+    }
+    
+    if (size_fields !== undefined) {
+      updateObj.size_fields = Array.isArray(size_fields) ? size_fields : null;
+      console.log(`[REQ:${requestId}] [MODELS-UPDATE] Updating size_fields:`, Array.isArray(size_fields) ? size_fields.length : 'null');
+    }
+    
+    if (unit_price !== undefined && unit_price !== null && unit_price !== '') {
+      const parsedPrice = Number(unit_price);
+      if (!isNaN(parsedPrice) && parsedPrice >= 0) {
+        updateObj.unit_price = parsedPrice;
+        console.log(`[REQ:${requestId}] [MODELS-UPDATE] Updating unit_price to:`, parsedPrice);
+      } else {
+        console.warn(`[REQ:${requestId}] [MODELS-UPDATE] ⚠️  Invalid unit_price provided, skipping:`, unit_price);
+      }
+    }
+    
+    if (Object.keys(updateObj).length === 0) {
+      console.warn(`[REQ:${requestId}] [MODELS-UPDATE] ⚠️  No valid fields to update`);
+      return res.status(400).json({ error: 'No valid fields to update' });
+    }
+    
+    console.log(`[REQ:${requestId}] [MODELS-UPDATE] Update object prepared:`, Object.keys(updateObj));
+    
+    // Step 3: Update in database
+    console.log(`[REQ:${requestId}] [MODELS-UPDATE] Step 3: Updating in database`);
+    const { data, error } = await supabase
+      .from('models')
+      .update(updateObj)
+      .eq('models_id', modelId)
+      .select()
+      .maybeSingle();
+    
+    if (error) {
+      console.error(`[REQ:${requestId}] [MODELS-UPDATE] ❌ Database update error:`, {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code
+      });
+      return res.status(500).json({ error: error.message || error });
+    }
+    
+    if (!data) {
+      console.error(`[REQ:${requestId}] [MODELS-UPDATE] ❌ Model not found`);
+      return res.status(404).json({ error: 'Model not found' });
+    }
+    
+    console.log(`[REQ:${requestId}] [MODELS-UPDATE] ✓ Model updated successfully`);
+    console.log(`[REQ:${requestId}] [MODELS-UPDATE] Updated model:`, {
+      models_id: data.models_id,
+      name: data.name,
+      unit_price: data.unit_price
+    });
+    console.log(`[REQ:${requestId}] [MODELS-UPDATE] === Update complete ===`);
+    console.log(`[REQ:${requestId}] [MODELS-UPDATE] ========================================`);
+    
+    return res.status(200).json(data);
+  } catch (err) {
+    console.error(`[REQ:${requestId}] [MODELS-UPDATE] ❌ Unexpected error:`, err.message || err);
+    console.error(`[REQ:${requestId}] [MODELS-UPDATE] Error name:`, err.name);
+    console.error(`[REQ:${requestId}] [MODELS-UPDATE] Error stack:`, err.stack);
+    console.error(`[REQ:${requestId}] [MODELS-UPDATE] === Update failed ===`);
+    console.error(`[REQ:${requestId}] [MODELS-UPDATE] ========================================`);
+    return res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+// Delete a model (DELETE /api/models/:id)
+router.delete('/models/:id', verifyToken, async (req, res) => {
+  const requestId = req.id || 'unknown';
+  const userId = req.user?.users_id;
+  const modelId = req.params.id;
+  
+  console.log(`[REQ:${requestId}] [MODELS-DELETE] ========================================`);
+  console.log(`[REQ:${requestId}] [MODELS-DELETE] === Deleting model ===`);
+  console.log(`[REQ:${requestId}] [MODELS-DELETE] Timestamp:`, new Date().toISOString());
+  console.log(`[REQ:${requestId}] [MODELS-DELETE] User:`, { users_id: userId, is_admin: req.user?.is_admin });
+  console.log(`[REQ:${requestId}] [MODELS-DELETE] Model ID:`, modelId);
+  
+  try {
+    if (!modelId) {
+      console.error(`[REQ:${requestId}] [MODELS-DELETE] ❌ Model ID is required`);
+      return res.status(400).json({ error: 'Model ID is required' });
+    }
+    
+    // Step 1: Check if model exists
+    console.log(`[REQ:${requestId}] [MODELS-DELETE] Step 1: Checking if model exists`);
+    const { data: existingModel, error: fetchErr } = await supabase
+      .from('models')
+      .select('*')
+      .eq('models_id', modelId)
+      .maybeSingle();
+    
+    if (fetchErr) {
+      console.error(`[REQ:${requestId}] [MODELS-DELETE] ❌ Database fetch error:`, fetchErr.message);
+      return res.status(500).json({ error: 'Failed to fetch model' });
+    }
+    
+    if (!existingModel) {
+      console.error(`[REQ:${requestId}] [MODELS-DELETE] ❌ Model not found`);
+      return res.status(404).json({ error: 'Model not found' });
+    }
+    
+    console.log(`[REQ:${requestId}] [MODELS-DELETE] ✓ Model found:`, existingModel.name);
+    
+    // Step 2: Attempt to delete
+    console.log(`[REQ:${requestId}] [MODELS-DELETE] Step 2: Deleting model from database`);
+    const { error: deleteErr } = await supabase
+      .from('models')
+      .delete()
+      .eq('models_id', modelId);
+    
+    if (deleteErr) {
+      console.error(`[REQ:${requestId}] [MODELS-DELETE] ❌ Database delete error:`, {
+        message: deleteErr.message,
+        details: deleteErr.details,
+        hint: deleteErr.hint,
+        code: deleteErr.code
+      });
+      
+      // Check if it's a foreign key constraint error
+      if (deleteErr.message && (deleteErr.message.includes('foreign key') || deleteErr.message.includes('referenced'))) {
+        console.error(`[REQ:${requestId}] [MODELS-DELETE] ❌ Cannot delete: Model is referenced by existing orders`);
+        return res.status(409).json({ 
+          error: 'Cannot delete model that is referenced by existing orders',
+          details: 'This model is being used by one or more orders. Consider archiving instead.',
+          code: 'FOREIGN_KEY_CONSTRAINT'
+        });
+      }
+      
+      return res.status(500).json({ error: deleteErr.message || deleteErr });
+    }
+    
+    console.log(`[REQ:${requestId}] [MODELS-DELETE] ✓ Model deleted successfully`);
+    console.log(`[REQ:${requestId}] [MODELS-DELETE] === Delete complete ===`);
+    console.log(`[REQ:${requestId}] [MODELS-DELETE] ========================================`);
+    
+    return res.status(200).json({ message: 'Model deleted successfully', model: existingModel });
+  } catch (err) {
+    console.error(`[REQ:${requestId}] [MODELS-DELETE] ❌ Unexpected error:`, err.message || err);
+    console.error(`[REQ:${requestId}] [MODELS-DELETE] Error name:`, err.name);
+    console.error(`[REQ:${requestId}] [MODELS-DELETE] Error stack:`, err.stack);
+    console.error(`[REQ:${requestId}] [MODELS-DELETE] === Delete failed ===`);
+    console.error(`[REQ:${requestId}] [MODELS-DELETE] ========================================`);
     return res.status(500).json({ error: err.message || String(err) });
   }
 });

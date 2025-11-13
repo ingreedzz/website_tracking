@@ -60,7 +60,7 @@
 
       <div class="flex items-center space-x-3">
   <button @click="submitPayment" :disabled="uploading || !orderId || (selectedOrder && (selectedOrder.payment_status === 'paid' || selectedOrder.payment_proof_path || selectedOrder.payment_proof_url))" class="px-4 py-2 bg-green-600 text-white rounded">
-          <span v-if="!uploading">Upload Proof</span>
+          <span v-if="!uploading">Upload Payment</span>
           <span v-else>Uploading...</span>
         </button>
         <button @click="resetForm" class="px-4 py-2 bg-gray-300 rounded">Reset</button>
@@ -272,7 +272,7 @@ async function submitPayment() {
     await loadOrders()
     
     console.log('[PAYMENT] === Payment proof upload complete ===');
-    alert('Payment proof uploaded and attached to order')
+    alert('Payment uploaded successfully. Order status updated to completed.')
   } catch (err) {
     console.error('[PAYMENT] === Upload error ===');
     console.error('[PAYMENT] Error:', err);
