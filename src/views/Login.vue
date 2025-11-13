@@ -102,16 +102,11 @@ export default {
   
   alert('Logged in: ' + (emailStr || '') + (role ? (' (role: ' + role + ')') : ''))
   
-  // route admins to AdminDashboard, others to regular Dashboard
-  console.log('[Login] Step 6: Routing to appropriate dashboard');
+  // All users now route to the regular Dashboard (no more admin dashboard)
+  console.log('[Login] Step 6: Routing to Dashboard');
   try {
-    if (payload && payload.is_admin) {
-      console.log('[Login] Routing to AdminDashboard');
-      await router.push({ name: 'AdminDashboard' })
-    } else {
-      console.log('[Login] Routing to Dashboard');
-      await router.push({ name: 'Dashboard' })
-    }
+    console.log('[Login] Routing to Dashboard');
+    await router.push({ name: 'Dashboard' })
     console.log('[Login] ✓ Navigation successful');
   } catch (e) {
     console.warn('[Login] ⚠️  Router push failed:', e)
