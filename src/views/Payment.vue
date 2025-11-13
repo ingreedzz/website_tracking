@@ -272,7 +272,7 @@ async function submitPayment() {
     await loadOrders()
     
     console.log('[PAYMENT] === Payment proof upload complete ===');
-    alert('Payment uploaded successfully. Order status updated to completed.')
+    alert('Payment uploaded successfully. Payment status updated to completed.')
   } catch (err) {
     console.error('[PAYMENT] === Upload error ===');
     console.error('[PAYMENT] Error:', err);
