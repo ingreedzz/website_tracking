@@ -7,18 +7,88 @@
         <button @click="logout" class="ml-auto px-3 py-2 bg-red-600 text-white rounded">Log Out</button>
     </div>
 
-      <div v-if="showCreateModel" class="mb-6 bg-gray-50 p-4 rounded">
-        <h3 class="font-semibold mb-2">Create New Model</h3>
-        <div class="grid grid-cols-3 gap-3">
-          <input v-model="newModel.name" placeholder="Model name (unique)" class="col-span-1 border rounded px-2 py-1" />
-          <input v-model="newModel.description" placeholder="Short description" class="col-span-1 border rounded px-2 py-1" />
-          <input v-model="newModel.size_fields_raw" placeholder='Size fields JSON (e.g. [{"key":"lingkar_dada","label":"Lingkar Dada","type":"number"}])' class="col-span-1 border rounded px-2 py-1" />
+      <div v-if="showCreateModel" class="mb-6 bg-white border-2 border-gray-300 p-6 rounded-lg shadow-md">
+        <h3 class="text-xl font-bold mb-4">Create New Model</h3>
+        
+        <!-- Model Basic Info -->
+        <div class="mb-4">
+          <label class="block text-sm font-medium mb-1">Model Name (required)</label>
+          <input v-model="newModel.name" placeholder="e.g., Kaos Oblong Dewasa" class="w-full border rounded px-3 py-2" />
         </div>
-        <div class="mt-3">
-          <button @click="createModel" class="px-3 py-2 bg-blue-600 text-white rounded">Create</button>
-          <button @click="toggleCreateModel" class="ml-2 px-3 py-2 bg-gray-300 rounded">Cancel</button>
+        
+        <div class="mb-4">
+          <label class="block text-sm font-medium mb-1">Description</label>
+          <input v-model="newModel.description" placeholder="e.g., Adult t-shirt with custom sizing" class="w-full border rounded px-3 py-2" />
         </div>
-        <div v-if="modelCreateMsg" class="mt-2 text-sm text-gray-700">{{ modelCreateMsg }}</div>
+
+        <!-- Dynamic Size Fields Builder -->
+        <div class="mb-4">
+          <div class="flex items-center justify-between mb-2">
+            <label class="block text-sm font-medium">Size Fields</label>
+            <button @click="addSizeField" type="button" class="px-3 py-1 bg-green-500 text-white text-sm rounded hover:bg-green-600">
+              + Add Field
+            </button>
+          </div>
+
+          <!-- List of Size Fields -->
+          <div v-if="newModel.size_fields.length === 0" class="text-sm text-gray-500 italic p-3 bg-gray-50 rounded">
+            No size fields added yet. Click "+ Add Field" to add custom size fields for this model.
+          </div>
+
+          <div v-for="(field, index) in newModel.size_fields" :key="index" class="mb-3 p-3 bg-gray-50 rounded border">
+            <div class="grid grid-cols-12 gap-2">
+              <div class="col-span-3">
+                <label class="block text-xs text-gray-600 mb-1">Field Key</label>
+                <input v-model="field.key" placeholder="e.g., lingkar_dada" class="w-full border rounded px-2 py-1 text-sm" />
+              </div>
+              <div class="col-span-3">
+                <label class="block text-xs text-gray-600 mb-1">Field Label</label>
+                <input v-model="field.label" placeholder="e.g., Lingkar Dada" class="w-full border rounded px-2 py-1 text-sm" />
+              </div>
+              <div class="col-span-2">
+                <label class="block text-xs text-gray-600 mb-1">Type</label>
+                <select v-model="field.type" class="w-full border rounded px-2 py-1 text-sm">
+                  <option value="number">Number</option>
+                  <option value="text">Text</option>
+                </select>
+              </div>
+              <div class="col-span-2">
+                <label class="block text-xs text-gray-600 mb-1">Unit</label>
+                <input v-model="field.unit" placeholder="e.g., cm" class="w-full border rounded px-2 py-1 text-sm" />
+              </div>
+              <div class="col-span-2 flex items-end">
+                <button @click="removeSizeField(index)" type="button" class="w-full px-2 py-1 bg-red-500 text-white text-sm rounded hover:bg-red-600">
+                  Remove
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Example -->
+        <div class="mb-4 p-3 bg-blue-50 rounded text-sm">
+          <strong>Example size fields:</strong>
+          <ul class="mt-1 ml-4 list-disc text-xs text-gray-700">
+            <li>Key: lingkar_dada, Label: Lingkar Dada, Type: number, Unit: cm</li>
+            <li>Key: panjang_baju, Label: Panjang Baju, Type: number, Unit: cm</li>
+            <li>Key: panjang_lengan, Label: Panjang Lengan, Type: number, Unit: cm</li>
+          </ul>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="flex items-center space-x-3">
+          <button @click="createModel" type="button" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+            Create Model
+          </button>
+          <button @click="toggleCreateModel" type="button" class="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">
+            Cancel
+          </button>
+        </div>
+
+        <!-- Status Message -->
+        <div v-if="modelCreateMsg" :class="{'text-green-600': modelCreateMsg.includes('success'), 'text-red-600': !modelCreateMsg.includes('success')}" class="mt-3 text-sm font-medium">
+          {{ modelCreateMsg }}
+        </div>
       </div>
 
     <table class="w-full table-auto border-collapse">
@@ -62,7 +132,11 @@ import { apiPost } from '../lib/api'
 
 const orders = ref([])
 const showCreateModel = ref(false)
-const newModel = ref({ name: '', description: '', size_fields_raw: '' })
+const newModel = ref({ 
+  name: '', 
+  description: '', 
+  size_fields: [] 
+})
 const modelCreateMsg = ref('')
 const router = useRouter()
 
@@ -108,38 +182,63 @@ function refresh() {
 function toggleCreateModel() {
   showCreateModel.value = !showCreateModel.value
   modelCreateMsg.value = ''
+  // Reset form when opening
+  if (showCreateModel.value) {
+    newModel.value = { name: '', description: '', size_fields: [] }
+  }
+}
+
+function addSizeField() {
+  newModel.value.size_fields.push({
+    key: '',
+    label: '',
+    type: 'number',
+    unit: 'cm'
+  })
+}
+
+function removeSizeField(index) {
+  newModel.value.size_fields.splice(index, 1)
 }
 
 async function createModel() {
   console.log('[AdminDashboard] Creating model...', newModel.value)
   try {
-    if (!newModel.value.name) {
-      modelCreateMsg.value = 'Name is required'
+    if (!newModel.value.name || !newModel.value.name.trim()) {
+      modelCreateMsg.value = 'Model name is required'
       return
     }
-    let sizeFields = null
-    if (newModel.value.size_fields_raw && newModel.value.size_fields_raw.trim()) {
-      try {
-        sizeFields = JSON.parse(newModel.value.size_fields_raw)
-        if (!Array.isArray(sizeFields)) {
-          modelCreateMsg.value = 'size_fields must be a JSON array'
-          return
-        }
-      } catch (e) {
-        modelCreateMsg.value = 'Invalid JSON for size_fields: ' + e.message
-        return
-      }
+
+    // Validate size fields
+    const sizeFields = newModel.value.size_fields.filter(f => f.key && f.label)
+    
+    // Warn if some fields are incomplete
+    if (sizeFields.length < newModel.value.size_fields.length) {
+      const incomplete = newModel.value.size_fields.length - sizeFields.length
+      console.warn(`[AdminDashboard] ${incomplete} incomplete fields removed`)
     }
 
-    const payload = { name: newModel.value.name, description: newModel.value.description }
-    if (sizeFields) payload.size_fields = sizeFields
+    const payload = { 
+      name: newModel.value.name.trim(), 
+      description: newModel.value.description.trim() || null
+    }
+    
+    // Only include size_fields if there are valid fields
+    if (sizeFields.length > 0) {
+      payload.size_fields = sizeFields
+    }
 
     const created = await apiPost('/models', payload)
     console.log('[AdminDashboard] Model created:', created)
-    modelCreateMsg.value = 'Model created successfully'
-    // reset form and refresh
-    newModel.value = { name: '', description: '', size_fields_raw: '' }
-    showCreateModel.value = false
+    modelCreateMsg.value = `Model "${newModel.value.name}" created successfully with ${sizeFields.length} size fields!`
+    
+    // Reset form after 2 seconds and close
+    setTimeout(() => {
+      newModel.value = { name: '', description: '', size_fields: [] }
+      showCreateModel.value = false
+      modelCreateMsg.value = ''
+    }, 2000)
+    
     fetchOrders()
   } catch (err) {
     console.error('[AdminDashboard] createModel failed', err)
