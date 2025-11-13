@@ -1353,3 +1353,7 @@ Status: committed locally in branch `copilot/add-debug-logs-and-fix-issues` and 
 ### Note about GitHub Secrets
 
 - On November 13, 2025 the repository secrets `SUPABASE_URL` and `SUPABASE_KEY` were added in the GitHub repository settings. The CI smoke-test workflow (`.github/workflows/smoke-test.yml`) has been updated to read these secrets into the job environment so Actions can access Supabase during smoke tests. Secrets are not visible in the repository and cannot be read by this agent; ensure they are present in the repo settings before running the workflow.
+
+### Agent Memory Created
+
+- Created `.AI_MEMORY.md` to record agent-visible facts and safe-operation policies (connections to Vercel, Render, Supabase, and GitHub MCP; migration scripts; and instructions). This file is used by the agent for planning and testing guidance. It does not contain sensitive secrets.
