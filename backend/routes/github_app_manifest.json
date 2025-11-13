@@ -1,0 +1,19 @@
+{
+  "name": "website-tracking-delegated-agent",
+  "url": "https://github.com/ingreedzz/website_tracking",
+  "hook_attributes": {
+    "url": "https://example.com/webhook"
+  },
+  "redirect_url": "https://github.com/settings/apps/new",
+  "public": false,
+  "description": "Scoped GitHub App to allow a delegated agent to dispatch workflows and read logs for safe DB migration and testing.",
+  "default_permissions": {
+    "actions": "read",
+    "workflows": "write",
+    "contents": "read",
+    "issues": "read"
+  },
+  "default_events": [
+    "workflow_run"
+  ]
+}
