@@ -29,8 +29,8 @@ const router = createRouter({
 router.beforeEach((to, from, next) => {
   const user = getCurrentUser()
   if (user && (to.name === 'Login' || to.name === 'Register')) {
-    // redirect admins to admin dashboard (using is_admin field, not role column)
-    const isAdmin = user.is_admin || user.role === 'admin'
+    // redirect admins to admin dashboard (using is_admin field only)
+    const isAdmin = !!user.is_admin
     if (isAdmin) return next({ name: 'AdminDashboard' })
     return next({ name: 'Dashboard' })
   }

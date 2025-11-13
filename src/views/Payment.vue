@@ -294,7 +294,7 @@ async function loadOrders() {
     
     // Determine user role to use correct endpoint
     const user = getCurrentUser() || decodeToken(token);
-    const isAdmin = user?.is_admin || user?.role === 'admin';
+    const isAdmin = !!user?.is_admin;
     const endpoint = isAdmin ? '/orders' : '/user/orders';
     
     console.log('[PAYMENT] User role:', { isAdmin: isAdmin });

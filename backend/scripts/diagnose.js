@@ -172,13 +172,13 @@ async function checkUserTable() {
     
     console.log('');
     const adminUsers = users.filter(u => u.is_admin || u.role === 'admin');
-    const customerUsers = users.filter(u => !u.is_admin && (u.role === 'customer' || !u.role));
+    const customerUsers = users.filter(u => !u.is_admin && !u.role);
     
     info(`Breakdown: ${adminUsers.length} admin(s), ${customerUsers.length} customer(s)`);
     console.log('');
     
     users.forEach((user, idx) => {
-      const derivedRole = user.role || (user.is_admin ? 'admin' : 'customer');
+      const derivedRole = user.role || (user.is_admin ? 'admin' : 'user');
       const roleColor = derivedRole === 'admin' ? 'yellow' : 'white';
       log(`${idx + 1}. ${user.email} (${derivedRole})`, roleColor);
       info(`   ID: ${user.users_id.substring(0, 8)}...`);

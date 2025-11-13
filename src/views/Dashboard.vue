@@ -275,7 +275,7 @@ export default {
         loading.value = false
         return
       }
-      console.log('[Dashboard] User payload:', { users_id: payload.users_id, role: payload.role });
+      console.log('[Dashboard] User payload:', { users_id: payload.users_id, is_admin: payload.is_admin });
       
       // Use users_id from token
       const uid = payload.users_id || null
@@ -285,9 +285,9 @@ export default {
         return
       }
       userId.value = uid
-      // prefer the role from token; fallback to profiles table
-      isAdmin.value = payload.is_admin || payload.role === 'admin'
-      console.log('[Dashboard] User role:', { isAdmin: isAdmin.value });
+      // prefer the is_admin flag from token
+      isAdmin.value = !!payload.is_admin
+      console.log('[Dashboard] User is_admin:', isAdmin.value);
 
       try {
         // Use different endpoint based on role

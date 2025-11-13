@@ -96,16 +96,16 @@ export default {
   });
   
   const emailStr = (json.user && json.user.email) || (payload && payload.email) || ''
-  const role = (payload && (payload.role || (payload.is_admin ? 'admin' : null))) || (json.user && json.user.role) || 'customer'
-  console.log('[Login] Determined role:', role);
+  const role = (payload && (payload.role || (payload.is_admin ? 'admin' : null))) || (json.user && json.user.role) || null
+  console.log('[Login] Determined role (only admin explicitly set):', role);
   console.log('[Login] User email:', emailStr);
   
-  alert('Logged in: ' + (emailStr || '') + ' (role: ' + role + ')')
+  alert('Logged in: ' + (emailStr || '') + (role ? (' (role: ' + role + ')') : ''))
   
   // route admins to AdminDashboard, others to regular Dashboard
   console.log('[Login] Step 6: Routing to appropriate dashboard');
   try {
-    if (role === 'admin') {
+    if (payload && payload.is_admin) {
       console.log('[Login] Routing to AdminDashboard');
       await router.push({ name: 'AdminDashboard' })
     } else {

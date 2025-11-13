@@ -2,9 +2,24 @@
   <section class="p-6">
     <h2 class="text-2xl font-bold mb-4">Dashboard Admin</h2>
     <div class="flex gap-2 mb-4">
-      <button @click="refresh" class="px-3 py-2 bg-gray-800 text-white rounded">Show Total Order</button>
-      <button @click="logout" class="ml-auto px-3 py-2 bg-red-600 text-white rounded">Log Out</button>
+        <button @click="refresh" class="px-3 py-2 bg-gray-800 text-white rounded">Show Total Order</button>
+        <button @click="toggleCreateModel" class="px-3 py-2 bg-green-600 text-white rounded">Create Model</button>
+        <button @click="logout" class="ml-auto px-3 py-2 bg-red-600 text-white rounded">Log Out</button>
     </div>
+
+      <div v-if="showCreateModel" class="mb-6 bg-gray-50 p-4 rounded">
+        <h3 class="font-semibold mb-2">Create New Model</h3>
+        <div class="grid grid-cols-3 gap-3">
+          <input v-model="newModel.name" placeholder="Model name (unique)" class="col-span-1 border rounded px-2 py-1" />
+          <input v-model="newModel.description" placeholder="Short description" class="col-span-1 border rounded px-2 py-1" />
+          <input v-model="newModel.size_fields_raw" placeholder='Size fields JSON (e.g. [{"key":"lingkar_dada","label":"Lingkar Dada","type":"number"}])' class="col-span-1 border rounded px-2 py-1" />
+        </div>
+        <div class="mt-3">
+          <button @click="createModel" class="px-3 py-2 bg-blue-600 text-white rounded">Create</button>
+          <button @click="toggleCreateModel" class="ml-2 px-3 py-2 bg-gray-300 rounded">Cancel</button>
+        </div>
+        <div v-if="modelCreateMsg" class="mt-2 text-sm text-gray-700">{{ modelCreateMsg }}</div>
+      </div>
 
     <table class="w-full table-auto border-collapse">
       <thead>
@@ -43,8 +58,12 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { getCurrentUser, clearToken } from '../lib/auth'
 import { apiGet } from '../lib/api'
+import { apiPost } from '../lib/api'
 
 const orders = ref([])
+const showCreateModel = ref(false)
+const newModel = ref({ name: '', description: '', size_fields_raw: '' })
+const modelCreateMsg = ref('')
 const router = useRouter()
 
 function formatPrice(price) {
@@ -86,13 +105,55 @@ function refresh() {
   fetchOrders() 
 }
 
+function toggleCreateModel() {
+  showCreateModel.value = !showCreateModel.value
+  modelCreateMsg.value = ''
+}
+
+async function createModel() {
+  console.log('[AdminDashboard] Creating model...', newModel.value)
+  try {
+    if (!newModel.value.name) {
+      modelCreateMsg.value = 'Name is required'
+      return
+    }
+    let sizeFields = null
+    if (newModel.value.size_fields_raw && newModel.value.size_fields_raw.trim()) {
+      try {
+        sizeFields = JSON.parse(newModel.value.size_fields_raw)
+        if (!Array.isArray(sizeFields)) {
+          modelCreateMsg.value = 'size_fields must be a JSON array'
+          return
+        }
+      } catch (e) {
+        modelCreateMsg.value = 'Invalid JSON for size_fields: ' + e.message
+        return
+      }
+    }
+
+    const payload = { name: newModel.value.name, description: newModel.value.description }
+    if (sizeFields) payload.size_fields = sizeFields
+
+    const created = await apiPost('/models', payload)
+    console.log('[AdminDashboard] Model created:', created)
+    modelCreateMsg.value = 'Model created successfully'
+    // reset form and refresh
+    newModel.value = { name: '', description: '', size_fields_raw: '' }
+    showCreateModel.value = false
+    fetchOrders()
+  } catch (err) {
+    console.error('[AdminDashboard] createModel failed', err)
+    modelCreateMsg.value = 'Failed to create model: ' + (err.message || err)
+  }
+}
+
 onMounted(() => {
   console.log('[AdminDashboard] Component mounted');
   const user = getCurrentUser()
   console.log('[AdminDashboard] Current user:', user ? { users_id: user.users_id, is_admin: user.is_admin } : null);
   
   // Check is_admin field instead of role column (which is being removed)
-  const isAdmin = user?.is_admin || user?.role === 'admin'
+  const isAdmin = !!user?.is_admin
   if (!user || !isAdmin) {
     console.log('[AdminDashboard] User is not admin, redirecting to home');
     router.push({ name: 'Home' }).catch(() => {})

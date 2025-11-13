@@ -68,15 +68,17 @@ function verifyToken(req, res, next) {
         id: userId,
         users_id: userId,
         email: payload.email || null,
-        // Prefer explicit role claim, otherwise use is_admin boolean to derive role
+        // Keep explicit admin flag. Do NOT automatically assign 'customer' role.
         is_admin: !!payload.is_admin,
-        role: payload.role || (payload.is_admin ? 'admin' : 'customer')
+        // Only include role if explicitly present in token (or admin).
+        role: payload.role || (payload.is_admin ? 'admin' : null)
       };
       
       console.log(`[REQ:${requestId}] [AUTH] ✓ User authenticated:`, {
         users_id: userId,
         email: payload.email || 'not present',
-        role: payload.role || 'customer'
+        is_admin: !!payload.is_admin,
+        role: payload.role || (payload.is_admin ? 'admin' : null)
       });
       console.log(`[REQ:${requestId}] [AUTH] === Token Verification Complete ===`);
 
@@ -127,10 +129,10 @@ function requireAdmin(req, res, next) {
     });
   }
   
-  console.log(`[REQ:${requestId}] [AUTH] User role:`, req.user.role);
+  console.log(`[REQ:${requestId}] [AUTH] User is_admin:`, !!req.user.is_admin);
 
-  if (req.user.role !== 'admin') {
-    console.warn(`[REQ:${requestId}] [AUTH] ❌ Access denied: user role '${req.user.role}' is not 'admin'`);
+  if (!req.user.is_admin) {
+    console.warn(`[REQ:${requestId}] [AUTH] ❌ Access denied: user is not admin`);
     return res.status(403).json({ 
       error: 'Admin role required',
       code: 'FORBIDDEN'

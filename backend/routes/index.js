@@ -148,10 +148,10 @@ router.post('/register', async (req, res) => {
       const payload = { 
         users_id: created.users_id, 
         email: created.email,
-        is_admin: !!created.is_admin,
-        // Role is derived from is_admin for backward compatibility, not stored in DB
-        role: created.is_admin ? 'admin' : 'customer'
+        is_admin: !!created.is_admin
       };
+      // Only include explicit role claim when admin
+      if (created.is_admin) payload.role = 'admin';
       const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
       console.log(`[REQ:${requestId}] [REGISTER] ✓ JWT token generated with role:`, payload.role);
       
@@ -289,10 +289,10 @@ router.post('/login', async (req, res) => {
       const payload = { 
         users_id: data.users_id, 
         email: data.email, 
-        is_admin: !!data.is_admin,
-        // Role is derived from is_admin for backward compatibility
-        role: data.is_admin ? 'admin' : 'customer'
+        is_admin: !!data.is_admin
       };
+      // Only include explicit role claim when admin
+      if (data.is_admin) payload.role = 'admin';
       
       console.log(`[REQ:${requestId}] [LOGIN] Token payload:`, {
         users_id: payload.users_id,
@@ -356,7 +356,8 @@ router.get('/users', verifyToken, requireAdmin, async (req, res) => {
       email: r.email,
       phone: r.phone,
       is_admin: !!r.is_admin,
-      role: r.role || (r.is_admin ? 'admin' : 'customer')
+      // Only expose role when explicitly set or if admin; do not return 'customer' role
+      role: r.role || (r.is_admin ? 'admin' : null)
     }));
     res.json(mapped);
   } catch (err) {
@@ -369,8 +370,8 @@ router.get('/orders', verifyToken, requireAdmin, async (req, res) => {
   console.log('[GET /orders] === Fetching all orders for admin ===');
   console.log('[GET /orders] Timestamp:', new Date().toISOString());
   const requestUserId = req.user?.users_id || req.user?.user_id || null;
-  const requestUserRole = req.user?.role || null;
-  console.log('[GET /orders] Admin user:', { users_id: requestUserId, role: requestUserRole });
+  const isAdminUser = !!req.user?.is_admin;
+  console.log('[GET /orders] Admin user:', { users_id: requestUserId, is_admin: isAdminUser });
   
   try {
     // Step 1: Validate Supabase configuration
@@ -491,8 +492,8 @@ router.get('/user/orders', verifyToken, async (req, res) => {
   console.log('[GET /user/orders] === Starting user orders fetch ===');
   console.log('[GET /user/orders] Timestamp:', new Date().toISOString());
   const requestUserId = req.user?.users_id || req.user?.user_id || null;
-  const requestUserRole = req.user?.role || null;
-  console.log('[GET /user/orders] User:', { users_id: requestUserId, role: requestUserRole });
+  const requestUserIsAdmin = !!req.user?.is_admin;
+  console.log('[GET /user/orders] User:', { users_id: requestUserId, is_admin: requestUserIsAdmin });
   
   try {
     // Step 1: Validate user authentication
@@ -644,8 +645,8 @@ router.get('/orders/:id', verifyToken, async (req, res) => {
     if (!id) return res.status(400).json({ error: 'order id required' });
     console.log('[GET /orders/:id] Order ID:', id);
     const requestUserId = req.user?.users_id || req.user?.user_id || null;
-    const requestUserRole = req.user?.role || null;
-    console.log('[GET /orders/:id] User:', { users_id: requestUserId, role: requestUserRole });
+    const requestUserIsAdmin = !!req.user?.is_admin;
+    console.log('[GET /orders/:id] User:', { users_id: requestUserId, is_admin: requestUserIsAdmin });
     
     if (!REST_BASE) return res.status(500).json({ error: 'Supabase not configured' })
     const url = `${REST_BASE}/orders?orders_id=eq.${encodeURIComponent(id)}&select=*,order_items(*)`;
@@ -662,7 +663,7 @@ router.get('/orders/:id', verifyToken, async (req, res) => {
     // Ownership check: users can only access their own orders unless admin
     const order = rows[0];
     console.log('[GET /orders/:id] Order user_id:', order.user_id);
-    const isAdmin = requestUserRole === 'admin';
+    const isAdmin = requestUserIsAdmin;
     console.log('[GET /orders/:id] Access check:', { 
       isAdmin: isAdmin,
       orderUserId: order.user_id,
@@ -856,7 +857,7 @@ router.post('/server/orders', verifyToken, upload.single('file'), async (req, re
     console.log(`[REQ:${requestId}] [ORDER] User from Token:`);
     console.log(`[REQ:${requestId}] [ORDER]   User ID: ${req.user.users_id || req.user.user_id || 'not found'}`);
     console.log(`[REQ:${requestId}] [ORDER]   Email: ${req.user.email || 'not set'}`);
-    console.log(`[REQ:${requestId}] [ORDER]   Role: ${req.user.role || 'not set'}`);
+    console.log(`[REQ:${requestId}] [ORDER]   is_admin: ${!!req.user.is_admin}`);
   } else {
     console.error(`[REQ:${requestId}] [ORDER] User: NO USER ON REQUEST`);
   }
@@ -1551,6 +1552,45 @@ router.get('/models', async (req, res) => {
       details: err.message,
       code: 'MODELS_FETCH_ERROR'
     });
+  }
+});
+
+// Create a new model (admin only)
+router.post('/models', verifyToken, requireAdmin, async (req, res) => {
+  const requestId = req.id || 'unknown';
+  console.log(`[REQ:${requestId}] [MODELS] === Create model ===`);
+  try {
+    const { name, description, size_fields } = req.body;
+    if (!name) return res.status(400).json({ error: 'name required' });
+
+    // Ensure size_fields is an array when provided
+    const sf = Array.isArray(size_fields) ? size_fields : (size_fields ? size_fields : null);
+
+    // Try inserting; if size_fields column doesn't exist, retry without it
+    try {
+      const insertObj = { name, description: description || null };
+      if (sf) insertObj.size_fields = sf;
+
+      const { data, error } = await supabase.from('models').insert([insertObj]).select().maybeSingle();
+      if (error) {
+        // detect missing column and retry without size_fields
+        const msg = (error && error.message) || '';
+        if (msg.includes('column') && msg.includes('size_fields') && sf) {
+          console.warn(`[REQ:${requestId}] [MODELS] size_fields column missing, retrying without it`);
+          const { data: d2, error: e2 } = await supabase.from('models').insert([{ name, description: description || null }]).select().maybeSingle();
+          if (e2) return res.status(500).json({ error: e2.message || e2 });
+          return res.status(201).json(d2);
+        }
+        return res.status(500).json({ error: error.message || error });
+      }
+      return res.status(201).json(data);
+    } catch (err) {
+      console.error(`[REQ:${requestId}] [MODELS] Insert failed:`, err.message || err);
+      return res.status(500).json({ error: err.message || String(err) });
+    }
+  } catch (err) {
+    console.error(`[REQ:${requestId}] [MODELS] Unexpected error:`, err.message || err);
+    return res.status(500).json({ error: err.message || String(err) });
   }
 });
 

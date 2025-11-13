@@ -33,7 +33,7 @@ function refreshUser() {
     if (u) {
     loggedIn.value = true
     userEmail.value = u.email || u.sub || u.users_id || u.user_id || ''
-    isAdmin.value = (u.role === 'admin' || u.is_admin === true)
+    isAdmin.value = (u.is_admin === true)
   } else {
     loggedIn.value = false
     userEmail.value = ''
