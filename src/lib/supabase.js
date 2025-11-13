@@ -30,10 +30,20 @@ export function setSupabaseAccessToken(token) {
 export async function getProfile(userId) {
   if (!userId) return null
   // Prefer the application-managed `users` table. If missing, fall back to profiles.
+  // NOTE: role column has been removed - we derive role from is_admin field
   try {
-    const { data: udata, error: uerr } = await supabase.from('users').select('users_id,email,name,phone,role,created_at').eq('users_id', userId).maybeSingle()
+    const { data: udata, error: uerr } = await supabase.from('users').select('users_id,email,name,phone,is_admin,created_at').eq('users_id', userId).maybeSingle()
     if (!uerr && udata) {
-      return { id: udata.users_id, email: udata.email, name: udata.name || null, phone: udata.phone || null, role: udata.role || null, created_at: udata.created_at }
+      return { 
+        id: udata.users_id, 
+        email: udata.email, 
+        name: udata.name || null, 
+        phone: udata.phone || null, 
+        is_admin: udata.is_admin || false,
+        // Derive role from is_admin for backward compatibility
+        role: udata.is_admin ? 'admin' : 'customer',
+        created_at: udata.created_at 
+      }
     }
   } catch (_e) {
     console.warn('[supabase] getProfile users query failed, will try profiles', _e && _e.message ? _e.message : _e)

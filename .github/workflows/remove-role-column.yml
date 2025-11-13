@@ -1,0 +1,212 @@
+name: Remove Role Column from Users Table
+
+# This workflow can be manually triggered to remove the role column from Supabase users table
+# It uses the SUPABASE_SERVICE_ROLE secret to execute the migration safely
+# WARNING: This is a destructive operation. Ensure you have backups before running.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_removal:
+        description: 'Type "REMOVE ROLE COLUMN" to confirm (case-sensitive)'
+        required: true
+        type: string
+      create_backup:
+        description: 'Create backup table before removal'
+        required: true
+        type: boolean
+        default: true
+
+jobs:
+  remove-role-column:
+    name: Remove Role Column Migration
+    runs-on: ubuntu-latest
+    
+    # Security: Use minimal permissions
+    permissions:
+      contents: read
+    
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Validate confirmation input
+        run: |
+          if [ "${{ github.event.inputs.confirm_removal }}" != "REMOVE ROLE COLUMN" ]; then
+            echo "❌ Confirmation text does not match. Aborting."
+            echo "Expected: 'REMOVE ROLE COLUMN' (case-sensitive)"
+            echo "Got: '${{ github.event.inputs.confirm_removal }}'"
+            exit 1
+          fi
+          echo "✅ Confirmation validated"
+      
+      - name: Validate environment variables
+        run: |
+          if [ -z "$SUPABASE_URL" ]; then
+            echo "❌ SUPABASE_URL secret is not set"
+            exit 1
+          fi
+          if [ -z "$SUPABASE_SERVICE_ROLE" ]; then
+            echo "❌ SUPABASE_SERVICE_ROLE secret is not set"
+            exit 1
+          fi
+          echo "✅ Environment variables validated"
+      
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+          echo "✅ PostgreSQL client installed"
+      
+      - name: Pre-flight check - Verify users table exists
+        run: |
+          echo "🔍 Checking if users table exists..."
+          
+          # Extract database connection details from SUPABASE_URL
+          DB_HOST=$(echo "$SUPABASE_URL" | sed 's|https://||' | sed 's|http://||' | cut -d'/' -f1)
+          DB_HOST="db.${DB_HOST//.supabase.co/}.supabase.co"
+          
+          # Check if role column exists
+          PGPASSWORD="$SUPABASE_SERVICE_ROLE" psql \
+            -h "$DB_HOST" \
+            -U postgres \
+            -d postgres \
+            -t -c "SELECT column_name FROM information_schema.columns WHERE table_name='users' AND column_name='role';" | grep -q "role"
+          
+          if [ $? -eq 0 ]; then
+            echo "✅ Role column exists in users table"
+          else
+            echo "ℹ️  Role column does not exist (already removed or never existed)"
+            echo "Migration will skip removal step"
+          fi
+      
+      - name: Create backup table (if enabled)
+        if: ${{ github.event.inputs.create_backup == 'true' }}
+        run: |
+          echo "📦 Creating backup table..."
+          
+          DB_HOST=$(echo "$SUPABASE_URL" | sed 's|https://||' | sed 's|http://||' | cut -d'/' -f1)
+          DB_HOST="db.${DB_HOST//.supabase.co/}.supabase.co"
+          
+          # Create backup with timestamp
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          
+          PGPASSWORD="$SUPABASE_SERVICE_ROLE" psql \
+            -h "$DB_HOST" \
+            -U postgres \
+            -d postgres \
+            -c "DROP TABLE IF EXISTS users_role_backup_${TIMESTAMP};"
+          
+          PGPASSWORD="$SUPABASE_SERVICE_ROLE" psql \
+            -h "$DB_HOST" \
+            -U postgres \
+            -d postgres \
+            -c "CREATE TABLE users_role_backup_${TIMESTAMP} AS SELECT users_id, email, role, is_admin, created_at FROM users;"
+          
+          # Verify backup
+          COUNT=$(PGPASSWORD="$SUPABASE_SERVICE_ROLE" psql \
+            -h "$DB_HOST" \
+            -U postgres \
+            -d postgres \
+            -t -c "SELECT COUNT(*) FROM users_role_backup_${TIMESTAMP};")
+          
+          echo "✅ Backup created: users_role_backup_${TIMESTAMP}"
+          echo "   Total users backed up: $COUNT"
+      
+      - name: Execute role column removal
+        run: |
+          echo "🗑️  Removing role column from users table..."
+          
+          DB_HOST=$(echo "$SUPABASE_URL" | sed 's|https://||' | sed 's|http://||' | cut -d'/' -f1)
+          DB_HOST="db.${DB_HOST//.supabase.co/}.supabase.co"
+          
+          # Check if column exists before attempting to drop
+          COLUMN_EXISTS=$(PGPASSWORD="$SUPABASE_SERVICE_ROLE" psql \
+            -h "$DB_HOST" \
+            -U postgres \
+            -d postgres \
+            -t -c "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='users' AND column_name='role';")
+          
+          if [ "$COLUMN_EXISTS" -gt 0 ]; then
+            # Drop the role column
+            PGPASSWORD="$SUPABASE_SERVICE_ROLE" psql \
+              -h "$DB_HOST" \
+              -U postgres \
+              -d postgres \
+              -c "ALTER TABLE users DROP COLUMN IF EXISTS role;"
+            
+            echo "✅ Role column removed successfully"
+          else
+            echo "ℹ️  Role column does not exist, skipping removal"
+          fi
+      
+      - name: Post-migration verification
+        run: |
+          echo "🔍 Verifying migration..."
+          
+          DB_HOST=$(echo "$SUPABASE_URL" | sed 's|https://||' | sed 's|http://||' | cut -d'/' -f1)
+          DB_HOST="db.${DB_HOST//.supabase.co/}.supabase.co"
+          
+          # Check that role column is gone
+          COLUMN_EXISTS=$(PGPASSWORD="$SUPABASE_SERVICE_ROLE" psql \
+            -h "$DB_HOST" \
+            -U postgres \
+            -d postgres \
+            -t -c "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='users' AND column_name='role';")
+          
+          if [ "$COLUMN_EXISTS" -eq 0 ]; then
+            echo "✅ Verified: Role column has been removed"
+          else
+            echo "❌ Error: Role column still exists"
+            exit 1
+          fi
+          
+          # Verify is_admin column still exists
+          IS_ADMIN_EXISTS=$(PGPASSWORD="$SUPABASE_SERVICE_ROLE" psql \
+            -h "$DB_HOST" \
+            -U postgres \
+            -d postgres \
+            -t -c "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='users' AND column_name='is_admin';")
+          
+          if [ "$IS_ADMIN_EXISTS" -gt 0 ]; then
+            echo "✅ Verified: is_admin column still exists"
+          else
+            echo "⚠️  Warning: is_admin column does not exist"
+          fi
+          
+          # Count users
+          USER_COUNT=$(PGPASSWORD="$SUPABASE_SERVICE_ROLE" psql \
+            -h "$DB_HOST" \
+            -U postgres \
+            -d postgres \
+            -t -c "SELECT COUNT(*) FROM users;")
+          
+          echo "✅ Total users in table: $USER_COUNT"
+      
+      - name: Summary
+        run: |
+          echo ""
+          echo "================================================"
+          echo "✅ Migration completed successfully!"
+          echo "================================================"
+          echo ""
+          echo "What was done:"
+          echo "  - Role column removed from users table"
+          if [ "${{ github.event.inputs.create_backup }}" == "true" ]; then
+            echo "  - Backup table created with timestamp"
+          fi
+          echo "  - Verification passed"
+          echo ""
+          echo "Next steps:"
+          echo "  1. Test the application to ensure it works without the role column"
+          echo "  2. Monitor authentication and authorization flows"
+          echo "  3. Check that admin access still works correctly"
+          echo "  4. If issues arise, restore from backup table in Supabase console"
+          echo ""
+          echo "To restore the role column if needed, run the SQL in:"
+          echo "  backend/database/restore_role_migration.sql"
+          echo ""

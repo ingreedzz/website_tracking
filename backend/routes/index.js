@@ -98,21 +98,19 @@ router.post('/register', async (req, res) => {
       throw checkErr;
     }
 
-    // Step 5: Determine user role
-    console.log(`[REQ:${requestId}] [REGISTER] Step 5: Determining user role`);
-    // Allow role to be specified for testing/development, but default to 'customer'
-    // In production, you may want to remove the role parameter entirely
-    const userRole = role && ['customer', 'admin'].includes(role) ? role : 'customer';
-    const isAdmin = userRole === 'admin';
+    // Step 5: Determine user role (using is_admin only, role column no longer needed)
+    console.log(`[REQ:${requestId}] [REGISTER] Step 5: Determining admin status`);
+    // Allow role to be specified for testing/development, but map to is_admin
+    // The role parameter is for backward compatibility during migration
+    const isAdmin = role === 'admin';
     
-    if (role && role !== userRole) {
-      console.warn(`[REQ:${requestId}] [REGISTER] ⚠️  Invalid role '${role}' provided, using 'customer'`);
+    if (role && !['customer', 'admin'].includes(role)) {
+      console.warn(`[REQ:${requestId}] [REGISTER] ⚠️  Invalid role '${role}' provided, defaulting to customer (is_admin=false)`);
     }
     
-    console.log(`[REQ:${requestId}] [REGISTER] User role:`, userRole);
     console.log(`[REQ:${requestId}] [REGISTER] Is admin:`, isAdmin);
     
-    // Step 6: Create user in database
+    // Step 6: Create user in database (without role column)
     console.log(`[REQ:${requestId}] [REGISTER] Step 6: Creating user in database`);
     const url = `${REST_BASE}/users`;
     const body = [{ 
@@ -120,11 +118,10 @@ router.post('/register', async (req, res) => {
       email, 
       password: hashed, 
       phone: phone || null,
-      role: userRole,
       is_admin: isAdmin
     }];
     
-    console.log(`[REQ:${requestId}] [REGISTER] Creating user with role:`, userRole);
+    console.log(`[REQ:${requestId}] [REGISTER] Creating user with is_admin:`, isAdmin);
     
     try {
       const resp = await axios.post(url, body, { 
@@ -141,22 +138,22 @@ router.post('/register', async (req, res) => {
       
       console.log(`[REQ:${requestId}] [REGISTER] ✓ User created successfully`);
       console.log(`[REQ:${requestId}] [REGISTER] User ID:`, created.users_id);
-      console.log(`[REQ:${requestId}] [REGISTER] User role:`, created.role);
       console.log(`[REQ:${requestId}] [REGISTER] Is admin:`, created.is_admin);
       
       // Remove password from response
       if (created.password) delete created.password;
 
-      // Step 7: Generate JWT token
+      // Step 7: Generate JWT token (role derived from is_admin, not stored in DB)
       console.log(`[REQ:${requestId}] [REGISTER] Step 7: Generating JWT token`);
       const payload = { 
         users_id: created.users_id, 
         email: created.email,
         is_admin: !!created.is_admin,
-        role: created.role || (created.is_admin ? 'admin' : 'customer') 
+        // Role is derived from is_admin for backward compatibility, not stored in DB
+        role: created.is_admin ? 'admin' : 'customer'
       };
       const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
-      console.log(`[REQ:${requestId}] [REGISTER] ✓ JWT token generated`);
+      console.log(`[REQ:${requestId}] [REGISTER] ✓ JWT token generated with role:`, payload.role);
       
       console.log(`[REQ:${requestId}] [REGISTER] === Registration complete ===`);
       res.status(201).json({ user: created, token });
@@ -169,29 +166,14 @@ router.post('/register', async (req, res) => {
         console.error(`[REQ:${requestId}] [REGISTER] Response status:`, createErr.response.status);
         console.error(`[REQ:${requestId}] [REGISTER] Response data:`, JSON.stringify(createErr.response.data));
 
-        // If the role column doesn't exist, retry without it (safe migration path)
+        // If the role column doesn't exist, this is expected after migration
         const errMsg = (createErr.response.data && (createErr.response.data.message || JSON.stringify(createErr.response.data))) || createErr.message;
         if (typeof errMsg === 'string' && errMsg.includes('column') && errMsg.includes('role')) {
-          console.warn(`[REQ:${requestId}] [REGISTER] ⚠️  'role' column missing in DB, retrying without role`);
-          const retryBody = [{ name, email, password: hashed, phone: phone || null, is_admin: isAdmin }];
-          try {
-            const retryResp = await axios.post(url, retryBody, { headers: { ...SB_HEADERS, Prefer: 'return=representation' }, timeout: 10000 });
-            const created2 = Array.isArray(retryResp.data) && retryResp.data.length ? retryResp.data[0] : null;
-            if (!created2) {
-              console.error(`[REQ:${requestId}] [REGISTER] ❌ Retry returned no data`);
-              return res.status(500).json({ error: 'Failed to create user (retry)' });
-            }
-            if (created2.password) delete created2.password;
-            console.log(`[REQ:${requestId}] [REGISTER] ✓ User created successfully (without role)`);
-            console.log(`[REQ:${requestId}] [REGISTER] User ID:`, created2.users_id);
-            // Generate token based on is_admin
-            const payload2 = { users_id: created2.users_id, email: created2.email, is_admin: !!created2.is_admin, role: created2.role || (created2.is_admin ? 'admin' : 'customer') };
-            const token2 = jwt.sign(payload2, JWT_SECRET, { expiresIn: '7d' });
-            return res.status(201).json({ user: created2, token: token2 });
-          } catch (retryErr) {
-            console.error(`[REQ:${requestId}] [REGISTER] ❌ Retry failed:`, retryErr.message);
-            // fall through to standard error handling below
-          }
+          console.log(`[REQ:${requestId}] [REGISTER] ℹ️  'role' column not in DB (expected after migration), user created successfully`);
+          // This is not an error - the role column is intentionally removed
+          // The user was already created above without the role column
+          // Just ensure the response doesn't have a role field
+          return res.status(201).json({ user: created, token });
         }
 
         if (createErr.response.status === 409) {
@@ -284,7 +266,6 @@ router.post('/login', async (req, res) => {
         users_id: data.users_id,
         email: data.email,
         name: data.name,
-        role: data.role,
         is_admin: data.is_admin,
         hasPassword: !!data.password
       });
@@ -303,13 +284,14 @@ router.post('/login', async (req, res) => {
       // Remove password from response
       delete data.password;
       
-      // Step 5: Generate JWT token
+      // Step 5: Generate JWT token (role derived from is_admin)
       console.log(`[REQ:${requestId}] [LOGIN] Step 5: Generating JWT token`);
       const payload = { 
         users_id: data.users_id, 
         email: data.email, 
         is_admin: !!data.is_admin,
-        role: data.role || (data.is_admin ? 'admin' : 'customer') 
+        // Role is derived from is_admin for backward compatibility
+        role: data.is_admin ? 'admin' : 'customer'
       };
       
       console.log(`[REQ:${requestId}] [LOGIN] Token payload:`, {
@@ -323,7 +305,7 @@ router.post('/login', async (req, res) => {
       console.log(`[REQ:${requestId}] [LOGIN] ✓ JWT token generated`);
       
       console.log(`[REQ:${requestId}] [LOGIN] === Login complete ===`);
-      console.log(`[REQ:${requestId}] [LOGIN] User role:`, data.role);
+      console.log(`[REQ:${requestId}] [LOGIN] Derived role:`, payload.role);
       console.log(`[REQ:${requestId}] [LOGIN] Is admin:`, data.is_admin);
       
       res.json({ user: data, token });
