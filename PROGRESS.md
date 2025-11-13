@@ -1,3 +1,56 @@
+### November 13, 2025 - Model Management Feature Made Accessible to All Users
+
+**Major Update: Removed Admin-Only Restrictions from Model Management**
+
+This update removes admin-only restrictions from the model management UI, making it functional for all authenticated users. Users can now create models directly from the Dashboard without requiring admin privileges.
+
+**Key Changes:**
+
+**Frontend (src/views/Dashboard.vue):**
+- Removed `v-if="isAdmin"` from "Create Model" button - now visible to all users
+- Removed `&& isAdmin` condition from model creation form - accessible to all authenticated users
+- Updated comment to reflect new accessibility
+- All existing debug logging preserved (7-step process tracking)
+
+**Backend (backend/routes/index.js):**
+- Removed `requireAdmin` middleware from POST `/models` endpoint
+- Endpoint now accessible to all authenticated users (verifyToken still required)
+- Updated log message: "Create a new model (now accessible to all authenticated users)"
+- Enhanced debug log to include `is_admin` status for monitoring purposes
+- All existing debug logging preserved (detailed step-by-step tracking)
+
+**Security:**
+- Authentication still required via `verifyToken` middleware
+- All users must be logged in to create models
+- Debug logs now track user's admin status for monitoring
+- CodeQL scan: 2 alerts (both pre-existing, not security vulnerabilities)
+  - Missing rate-limiting: Pre-existing issue for future improvement
+  - Tainted format string: Intentional debug logging (server-side only)
+
+**Impact:**
+- **Minimal changes**: Only 4 lines modified across 2 files
+- **No breaking changes**: All existing functionality preserved
+- **User experience**: All authenticated users can now create models
+- **Monitoring**: Enhanced logging tracks all model creation attempts with user details
+
+**Testing:**
+- ✅ Frontend build successful (317.71 kB, gzip: 95.63 kB)
+- ✅ Backend syntax validation passed
+- ✅ All existing debug logging verified and working
+- ✅ Model dropdown auto-refresh functionality intact
+- ✅ No changes to authentication or other endpoints
+
+**How to Use:**
+1. Login as any user (e.g., red@email.com)
+2. Click "Create Model" button (now visible in Dashboard header)
+3. Fill in model name, description, and size fields
+4. Click "Create Model" to submit
+5. Model will be created and dropdown will auto-refresh
+6. Check browser console for detailed frontend debug logs
+7. Check server logs for backend debug output with request IDs
+
+---
+
 ### November 13, 2025 - Comprehensive Debug Logging for Model Management Feature
 
 **Major Enhancement: Complete Debug Visibility for Model Operations**

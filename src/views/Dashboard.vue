@@ -5,13 +5,13 @@
       <div class="space-x-2">
         <button @click="viewMode = 'create'" class="px-3 py-2 bg-blue-500 text-white rounded">Make New Order</button>
         <button @click="viewMode = 'list'" class="px-3 py-2 bg-gray-700 text-white rounded">Show Orders</button>
-        <button v-if="isAdmin" @click="viewMode = 'createModel'" class="px-3 py-2 bg-green-600 text-white rounded">Create Model</button>
+        <button @click="viewMode = 'createModel'" class="px-3 py-2 bg-green-600 text-white rounded">Create Model</button>
         <button @click="logout" class="px-3 py-2 bg-red-500 text-white rounded">Log out</button>
       </div>
     </div>
 
-    <!-- Create Model (Admin Only) -->
-    <div v-if="viewMode === 'createModel' && isAdmin" class="mb-6 bg-white border-2 border-gray-300 p-6 rounded-lg shadow-md">
+    <!-- Create Model -->
+    <div v-if="viewMode === 'createModel'" class="mb-6 bg-white border-2 border-gray-300 p-6 rounded-lg shadow-md">
       <h3 class="text-xl font-bold mb-4">Create New Model</h3>
       
       <!-- Model Basic Info -->
