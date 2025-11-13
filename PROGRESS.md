@@ -1,3 +1,78 @@
+### November 13, 2025 - Navbar UI Adjustments and Enhanced Debug Logging
+
+**UI Changes:**
+
+**Navbar.vue (src/components/Navbar.vue):**
+- **Re-added Login button**: Login button now visible when user is not logged in
+- **Removed Register button**: Register button hidden from navbar (route still functional at `/register`)
+- Updated comment to reflect the changes: "Register button removed per requirements - route still functional at /register"
+- Maintains clean, minimal UI while keeping all functionality accessible via direct routes
+
+**Enhanced Debug Logging:**
+
+**Login.vue:**
+- Added comprehensive console logging throughout the login process
+- **Step-by-step logging**: Each step of the login flow is logged with clear markers
+- **Timestamp tracking**: All log entries include ISO timestamps for debugging
+- **Error tracking**: Full error details including stack traces are logged
+- **Token handling**: Logs token receipt, storage, and JWT payload parsing
+- **Role determination**: Logs how user role is determined from token payload
+- **Navigation tracking**: Logs which dashboard the user is being routed to
+- **Mount hook logging**: Logs whether user is already logged in on component mount
+
+**Verification & Testing:**
+
+**Build Status:**
+- ✅ Frontend build successful: 316KB bundle (gzip: 95.21KB)
+- ✅ Backend syntax validation passed
+- ✅ All dependencies installed successfully (389 packages)
+- ✅ No compilation errors
+
+**Previous Implementation Verification:**
+- ✅ Dynamic models implementation confirmed working
+  - `/models` endpoint exists with full error handling
+  - Handles missing `size_fields` column gracefully
+  - Dashboard loads models dynamically with fallback
+- ✅ Customer/Order names implementation confirmed working
+  - Backend conditionally includes customer_name and order_name
+  - Retry logic if DB columns don't exist
+  - Dashboard displays these fields in orders table
+  - Payment.vue formats order display with these fields
+
+**Customer Role Analysis:**
+
+**Finding: Customer role is SAFE to remove from Supabase database**
+
+**Why it's safe:**
+- Customer role is only used as a **default fallback** in 4 places:
+  1. `backend/routes/index.js` line 105: Registration role validation fallback
+  2. `backend/routes/index.js` line 155: JWT payload during registration
+  3. `backend/routes/index.js` line 285: JWT payload during login
+  4. `backend/middleware/auth.js` line 71: Token verification fallback
+- **No hard dependencies** on customer role existing in the database
+- System gracefully defaults to 'customer' if `role` field is null/undefined
+- Users without a role will still function normally with the default fallback
+
+**How to remove customer role from Supabase (if desired):**
+1. No code changes needed - system handles null/missing roles
+2. Simply delete 'customer' value from role column in users table
+3. Or change role column to allow NULL values
+4. Backend will automatically use 'customer' as the default
+
+**Files Modified:**
+- `src/components/Navbar.vue` - Re-added Login button, removed Register button (3 lines changed)
+- `src/views/Login.vue` - Added comprehensive debug logging (~60 lines of logging added)
+- `dist/index.html` - Rebuilt frontend assets
+
+**Testing Notes:**
+- Login route accessible via direct URL: `/login`
+- Register route accessible via direct URL: `/register`
+- Both routes remain fully functional
+- Navbar now provides better UX with visible Login button
+- Debug logs will help diagnose any authentication issues
+
+---
+
 ### November 12, 2025 - Dynamic Models & Admin Reporting Implementation
 
 **Features Implemented:**

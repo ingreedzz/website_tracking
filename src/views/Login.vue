@@ -31,51 +31,111 @@ export default {
   const router = useRouter()
 
   async function login() {
+      console.log('[Login] === Starting login process ===');
+      console.log('[Login] Timestamp:', new Date().toISOString());
+      console.log('[Login] Email:', email.value);
+      
       try {
+        console.log('[Login] Step 1: Sending login request to /api/login');
         const resp = await fetch('/api/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: email.value, password: password.value })
         })
+        console.log('[Login] Response received - Status:', resp.status, resp.statusText);
+        
         if (!resp.ok) {
+          console.error('[Login] ❌ Login request failed with status:', resp.status);
           // try JSON first, then text fallback so we surface server messages
           let eb = null
           try { eb = await resp.json() } catch (e) {}
-          if (eb && eb.error) throw new Error(eb.error)
+          if (eb && eb.error) {
+            console.error('[Login] Error from backend:', eb.error);
+            throw new Error(eb.error)
+          }
           try {
             const txt = await resp.text()
-            if (txt) throw new Error(`Server ${resp.status}: ${txt}`)
+            if (txt) {
+              console.error('[Login] Error text from server:', txt);
+              throw new Error(`Server ${resp.status}: ${txt}`)
+            }
           } catch (e) {}
           throw new Error('Login failed (' + resp.status + ')')
         }
+        
+  console.log('[Login] Step 2: Parsing response JSON');
   const json = await resp.json()
+  console.log('[Login] Response data:', { 
+    hasUser: !!json.user, 
+    hasToken: !!json.token,
+    userEmail: json.user?.email 
+  });
+  
   // Backend returns { user, token }
   const token = json.token
   if (token) {
+    console.log('[Login] Step 3: Setting token in storage');
     setToken(token)
+    console.log('[Login] ✓ Token saved successfully');
+    
     // notify other parts of the app (Navbar) that auth changed
+    console.log('[Login] Step 4: Dispatching auth-change event');
     window.dispatchEvent(new Event('auth-change'))
-  } else throw new Error('No token returned')
+    console.log('[Login] ✓ Auth-change event dispatched');
+  } else {
+    console.error('[Login] ❌ No token returned from backend');
+    throw new Error('No token returned')
+  }
 
+  console.log('[Login] Step 5: Decoding token and determining role');
   const payload = decodeToken(token)
+  console.log('[Login] Token payload:', { 
+    email: payload?.email, 
+    role: payload?.role, 
+    is_admin: payload?.is_admin 
+  });
+  
   const emailStr = (json.user && json.user.email) || (payload && payload.email) || ''
   const role = (payload && (payload.role || (payload.is_admin ? 'admin' : null))) || (json.user && json.user.role) || 'customer'
+  console.log('[Login] Determined role:', role);
+  console.log('[Login] User email:', emailStr);
+  
   alert('Logged in: ' + (emailStr || '') + ' (role: ' + role + ')')
+  
   // route admins to AdminDashboard, others to regular Dashboard
+  console.log('[Login] Step 6: Routing to appropriate dashboard');
   try {
-    if (role === 'admin') await router.push({ name: 'AdminDashboard' })
-    else await router.push({ name: 'Dashboard' })
+    if (role === 'admin') {
+      console.log('[Login] Routing to AdminDashboard');
+      await router.push({ name: 'AdminDashboard' })
+    } else {
+      console.log('[Login] Routing to Dashboard');
+      await router.push({ name: 'Dashboard' })
+    }
+    console.log('[Login] ✓ Navigation successful');
   } catch (e) {
-    console.warn('[login] router.push failed', e)
+    console.warn('[Login] ⚠️  Router push failed:', e)
   }
+  
+  console.log('[Login] === Login process completed successfully ===');
       } catch (err) {
+        console.error('[Login] === Login process failed ===');
+        console.error('[Login] Error:', err);
+        console.error('[Login] Error message:', err.message);
+        console.error('[Login] Error stack:', err.stack);
         alert(err.message || String(err))
       }
     }
     // redirect if already logged in
     onMounted(() => {
-      if (getCurrentUser()) {
-        try { router.push({ name: 'Dashboard' }) } catch (e) { console.warn('[login] redirect failed', e) }
+      console.log('[Login] Component mounted - checking if user is already logged in');
+      const currentUser = getCurrentUser();
+      if (currentUser) {
+        console.log('[Login] User already logged in:', { email: currentUser.email || currentUser.sub });
+        console.log('[Login] Redirecting to Dashboard');
+        try { router.push({ name: 'Dashboard' }) } catch (e) { console.warn('[Login] Redirect failed:', e) }
+      } else {
+        console.log('[Login] No user logged in, showing login form');
       }
     })
 
