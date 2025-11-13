@@ -6,16 +6,12 @@ import Dashboard from '../views/Dashboard.vue'
 import Login from '../views/Login.vue'
 import OrderDetail from '../views/OrderDetail.vue'
 import Payment from '../views/Payment.vue'
-import AdminDashboard from '../views/AdminDashboard.vue'
-import AdminOrderDetail from '../views/AdminOrderDetail.vue'
 
 const routes = [
   { path: '/', name: 'Home', component: Home },
   { path: '/register', name: 'Register', component: Register },
   { path: '/dashboard', name: 'Dashboard', component: Dashboard },
   { path: '/payment', name: 'Payment', component: Payment },
-  { path: '/admin', name: 'AdminDashboard', component: AdminDashboard },
-  { path: '/admin/orders/:id', name: 'AdminOrderDetail', component: AdminOrderDetail, props: true },
   { path: '/login', name: 'Login', component: Login },
   { path: '/orders/:id', name: 'OrderDetail', component: OrderDetail, props: true }
 ]
@@ -29,9 +25,7 @@ const router = createRouter({
 router.beforeEach((to, from, next) => {
   const user = getCurrentUser()
   if (user && (to.name === 'Login' || to.name === 'Register')) {
-    // redirect admins to admin dashboard (using is_admin field only)
-    const isAdmin = !!user.is_admin
-    if (isAdmin) return next({ name: 'AdminDashboard' })
+    // All users go to regular dashboard now (no admin dashboard)
     return next({ name: 'Dashboard' })
   }
   next()
