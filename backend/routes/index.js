@@ -930,6 +930,64 @@ router.post('/server/orders', verifyToken, upload.single('file'), async (req, re
     const step2Duration = Date.now() - step2Start;
     console.log(`[REQ:${requestId}] [ORDER] ✓ Validation passed (${step2Duration}ms)`);
 
+    // Step 2.5: Determine unit_price (from request or from models table)
+    console.log(`[REQ:${requestId}] [ORDER] ${'─'.repeat(60)}`);
+    console.log(`[REQ:${requestId}] [ORDER] STEP 2.5: DETERMINING UNIT PRICE`);
+    console.log(`[REQ:${requestId}] [ORDER] ${'─'.repeat(60)}`);
+    
+    let finalUnitPrice = unit_price ? Number(unit_price) : 0;
+    let finalTotalPrice = total_price ? Number(total_price) : 0;
+    
+    console.log(`[REQ:${requestId}] [ORDER] Initial values:`);
+    console.log(`[REQ:${requestId}] [ORDER]   unit_price from request: ${unit_price || 'not provided'}`);
+    console.log(`[REQ:${requestId}] [ORDER]   total_price from request: ${total_price || 'not provided'}`);
+    
+    // If unit_price not provided, try to fetch from models table
+    if (!finalUnitPrice && model) {
+      console.log(`[REQ:${requestId}] [ORDER] Attempting to fetch unit_price from models table for: ${model}`);
+      try {
+        const { data: modelData, error: modelErr } = await supabase
+          .from('models')
+          .select('unit_price')
+          .eq('name', model)
+          .maybeSingle();
+        
+        if (modelErr) {
+          console.warn(`[REQ:${requestId}] [ORDER] ⚠️  Failed to query models table:`, modelErr.message);
+        } else if (modelData && modelData.unit_price) {
+          finalUnitPrice = Number(modelData.unit_price);
+          console.log(`[REQ:${requestId}] [ORDER] ✓ Found unit_price in models table: ${finalUnitPrice}`);
+        } else {
+          console.log(`[REQ:${requestId}] [ORDER] Model found but has no unit_price set`);
+        }
+      } catch (err) {
+        console.warn(`[REQ:${requestId}] [ORDER] ⚠️  Exception querying models:`, err.message);
+      }
+    } else if (finalUnitPrice) {
+      console.log(`[REQ:${requestId}] [ORDER] Using unit_price from request: ${finalUnitPrice}`);
+    } else {
+      console.log(`[REQ:${requestId}] [ORDER] No model specified, cannot fetch unit_price`);
+    }
+    
+    // Calculate total price server-side
+    const qty = quantity ? Number(quantity) : 1;
+    const calculatedTotal = finalUnitPrice * qty;
+    
+    console.log(`[REQ:${requestId}] [ORDER] Quantity: ${qty}`);
+    console.log(`[REQ:${requestId}] [ORDER] Calculated total (unit_price * quantity): ${calculatedTotal}`);
+    
+    // Use calculated total if client didn't provide or if significantly different
+    if (!finalTotalPrice || Math.abs(finalTotalPrice - calculatedTotal) > 0.01) {
+      if (finalTotalPrice && Math.abs(finalTotalPrice - calculatedTotal) > 0.01) {
+        console.warn(`[REQ:${requestId}] [ORDER] ⚠️  Client total (${finalTotalPrice}) differs from calculated (${calculatedTotal}), using calculated`);
+      }
+      finalTotalPrice = calculatedTotal;
+    }
+    
+    console.log(`[REQ:${requestId}] [ORDER] Final values:`);
+    console.log(`[REQ:${requestId}] [ORDER]   final unit_price: ${finalUnitPrice}`);
+    console.log(`[REQ:${requestId}] [ORDER]   final total_price: ${finalTotalPrice}`);
+
     // upload file to Supabase Storage
     console.log(`[REQ:${requestId}] [ORDER] ${'─'.repeat(60)}`);
     console.log(`[REQ:${requestId}] [ORDER] STEP 3: UPLOADING FILE TO SUPABASE STORAGE`);
@@ -1004,13 +1062,13 @@ router.post('/server/orders', verifyToken, upload.single('file'), async (req, re
       
       const step4Start = Date.now();
       
-      // Calculate total price
-      const calculatedTotal = total_price ? Number(total_price) : (unit_price ? Number(unit_price) * (Number(quantity || 1)) : 0);
+      // Use finalTotalPrice calculated in Step 2.5
+      console.log(`[REQ:${requestId}] [ORDER] Using calculated total: ${finalTotalPrice}`);
       
       const orderObj = {
         user_id: userId,
         status: 'created',
-        total: calculatedTotal,
+        total: finalTotalPrice,
         notes: null,
         order_date: new Date().toISOString(),
         deadline: deadline || null,
@@ -1170,11 +1228,11 @@ router.post('/server/orders', verifyToken, upload.single('file'), async (req, re
       console.log('[ORDER] Step 6: Creating order item...');
       const itemObj = {
         order_id: orderInsert.orders_id,
-        product_snapshot: { product: product, model: model, size: size, color: color },
+        product_snapshot: { product: product, model: model, size: size, color: color, unit_price: finalUnitPrice },
         quantity: quantity ? Number(quantity) : 1,
-        unit_price: unit_price ? Number(unit_price) : 0,
+        unit_price: finalUnitPrice,
         customization: customData,
-        calculated_price: total_price ? Number(total_price) : (unit_price ? Number(unit_price) * (Number(quantity || 1)) : 0),
+        calculated_price: finalTotalPrice,
         sablon_path: upData.path,
         color_id: null
       };
@@ -1219,10 +1277,17 @@ router.post('/server/orders', verifyToken, upload.single('file'), async (req, re
 
       // Return created order in a frontend-friendly shape (id field)
       const out = {
-        order: Object.assign({}, orderInsert, { id: orderInsert.orders_id, sablon_path: upData.path, sablon_url: publicUrl, item: itemInsert })
+        order: Object.assign({}, orderInsert, { 
+          id: orderInsert.orders_id, 
+          sablon_path: upData.path, 
+          sablon_url: publicUrl, 
+          item: itemInsert,
+          unit_price: finalUnitPrice,
+          total: finalTotalPrice
+        })
       };
       console.log('[ORDER] === Order creation successful ===');
-      console.log('[ORDER] Response:', { order_id: out.order.id, status: out.order.status });
+      console.log('[ORDER] Response:', { order_id: out.order.id, status: out.order.status, unit_price: finalUnitPrice, total: finalTotalPrice });
       return res.status(201).json(out);
     } catch (err) {
       console.error('[ORDER] === Unexpected error in order creation ===');
