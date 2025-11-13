@@ -1610,8 +1610,8 @@ router.get('/models', async (req, res) => {
   }
 });
 
-// Create a new model (admin only)
-router.post('/models', verifyToken, requireAdmin, async (req, res) => {
+// Create a new model (now accessible to all authenticated users)
+router.post('/models', verifyToken, async (req, res) => {
   const requestId = req.id || 'unknown';
   const userId = req.user?.users_id;
   const userRole = req.user?.role;
@@ -1619,7 +1619,7 @@ router.post('/models', verifyToken, requireAdmin, async (req, res) => {
   console.log(`[REQ:${requestId}] [MODELS-CREATE] ========================================`);
   console.log(`[REQ:${requestId}] [MODELS-CREATE] === Creating new model ===`);
   console.log(`[REQ:${requestId}] [MODELS-CREATE] Timestamp:`, new Date().toISOString());
-  console.log(`[REQ:${requestId}] [MODELS-CREATE] Admin user:`, { users_id: userId, role: userRole });
+  console.log(`[REQ:${requestId}] [MODELS-CREATE] User:`, { users_id: userId, role: userRole, is_admin: req.user?.is_admin });
   
   try {
     // Step 1: Extract and validate input
