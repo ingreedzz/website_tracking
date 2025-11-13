@@ -7,8 +7,8 @@
         <router-link v-if="isAdmin" to="/admin" class="px-3 py-2 rounded hover:bg-white/10">Admin</router-link>
         <router-link v-if="loggedIn" to="/dashboard" class="px-3 py-2 rounded hover:bg-white/10">Dashboard</router-link>
         <router-link v-if="loggedIn" to="/payment" class="px-3 py-2 rounded hover:bg-white/10">Payment</router-link>
-        <router-link v-if="!loggedIn" to="/register" class="px-3 py-2 rounded hover:bg-white/10">Register</router-link>
-        <!-- Sign In / Login button removed per requirements - route still functional at /login -->
+        <!-- Register button removed per requirements - route still functional at /register -->
+        <router-link v-if="!loggedIn" to="/login" class="px-3 py-2 rounded hover:bg-white/10">Login</router-link>
 
         <div v-if="loggedIn" class="flex items-center space-x-2">
           <span class="text-sm opacity-90">{{ userEmail }}</span>
