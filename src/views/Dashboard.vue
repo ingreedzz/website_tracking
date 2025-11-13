@@ -6,6 +6,7 @@
         <button @click="viewMode = 'create'" class="px-3 py-2 bg-blue-500 text-white rounded">Make New Order</button>
         <button @click="viewMode = 'list'" class="px-3 py-2 bg-gray-700 text-white rounded">Show Orders</button>
         <button @click="viewMode = 'createModel'" class="px-3 py-2 bg-green-600 text-white rounded">Create Model</button>
+        <button @click="viewMode = 'manageModels'" class="px-3 py-2 bg-purple-600 text-white rounded">Manage Models</button>
         <button @click="logout" class="px-3 py-2 bg-red-500 text-white rounded">Log out</button>
       </div>
     </div>
@@ -23,6 +24,12 @@
       <div class="mb-4">
         <label class="block text-sm font-medium mb-1">Description</label>
         <input v-model="newModel.description" placeholder="e.g., Adult t-shirt with custom sizing" class="w-full border rounded px-3 py-2" />
+      </div>
+
+      <div class="mb-4">
+        <label class="block text-sm font-medium mb-1">Unit Price (optional)</label>
+        <input v-model="newModel.unit_price" type="number" min="0" step="1000" placeholder="e.g., 28000" class="w-full border rounded px-3 py-2" />
+        <p class="text-xs text-gray-500 mt-1">Price per unit in Rupiah. Leave empty if price varies.</p>
       </div>
 
       <!-- Dynamic Size Fields Builder -->
@@ -92,6 +99,70 @@
       <!-- Status Message -->
       <div v-if="modelCreateMsg" :class="{'text-green-600': modelCreateMsg.includes('success'), 'text-red-600': !modelCreateMsg.includes('success')}" class="mt-3 text-sm font-medium">
         {{ modelCreateMsg }}
+      </div>
+    </div>
+
+    <!-- Manage Models -->
+    <div v-if="viewMode === 'manageModels'" class="mb-6 bg-white border-2 border-gray-300 p-6 rounded-lg shadow-md">
+      <h3 class="text-xl font-bold mb-4">Manage Models</h3>
+      
+      <div v-if="modelOptions.length === 0" class="text-gray-500 italic">
+        No models found. Create a model first.
+      </div>
+
+      <div v-else class="space-y-4">
+        <div v-for="model in modelOptions" :key="model.models_id" class="border rounded-lg p-4 bg-gray-50">
+          <div v-if="editingModelId !== model.models_id" class="flex items-start justify-between">
+            <div class="flex-1">
+              <h4 class="font-bold text-lg">{{ model.name }}</h4>
+              <p class="text-sm text-gray-600 mt-1" v-if="model.description">{{ model.description }}</p>
+              <p class="text-sm text-gray-600 mt-1" v-if="model.unit_price">
+                <span class="font-semibold">Unit Price:</span> Rp {{ formatNumber(model.unit_price) }}
+              </p>
+              <p class="text-sm text-gray-600 mt-1" v-if="model.size_fields && model.size_fields.length > 0">
+                <span class="font-semibold">Size Fields:</span> {{ model.size_fields.map(f => f.label || f.key).join(', ') }}
+              </p>
+            </div>
+            <div class="flex space-x-2 ml-4">
+              <button @click="startEditModel(model)" class="px-3 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-600">
+                Edit
+              </button>
+              <button @click="deleteModel(model)" class="px-3 py-1 bg-red-500 text-white text-sm rounded hover:bg-red-600">
+                Delete
+              </button>
+            </div>
+          </div>
+
+          <!-- Edit Form -->
+          <div v-else class="space-y-3">
+            <div>
+              <label class="block text-sm font-medium mb-1">Model Name</label>
+              <input v-model="editForm.name" class="w-full border rounded px-3 py-2" />
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1">Description</label>
+              <input v-model="editForm.description" class="w-full border rounded px-3 py-2" />
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1">Unit Price</label>
+              <input v-model.number="editForm.unit_price" type="number" min="0" step="1000" class="w-full border rounded px-3 py-2" />
+            </div>
+            <div class="flex space-x-2">
+              <button @click="saveEditModel()" class="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+                Save
+              </button>
+              <button @click="cancelEditModel()" class="px-3 py-2 bg-gray-300 rounded hover:bg-gray-400">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-4">
+        <button @click="viewMode = 'list'" class="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">
+          Back to Orders
+        </button>
       </div>
     </div>
 
@@ -267,12 +338,17 @@ export default {
     const newModel = ref({ 
       name: '', 
       description: '', 
-      size_fields: [] 
+      size_fields: [],
+      unit_price: null
     })
     const modelCreateMsg = ref('')
 
     // Model options - will be fetched from backend or use fallback
     const modelOptions = ref([])
+    
+    // Model editing state
+    const editingModelId = ref(null)
+    const editForm = ref({ name: '', description: '', unit_price: null })
     
     // Fallback model options with hardcoded fields (used if backend doesn't have models or size_fields)
     const fallbackModelOptions = [
@@ -669,7 +745,14 @@ export default {
       }
     }
 
-    function unitPriceForModel(key) {
+    function unitPriceForModel(modelName) {
+      // Try to find the model in modelOptions by name
+      const model = modelOptions.value.find(m => m.name === modelName);
+      if (model && model.unit_price) {
+        return Number(model.unit_price);
+      }
+      
+      // Fallback to hardcoded prices for backward compatibility
       const priceMap = {
         SetelanAnakPria: 32000,
         SetelanAnakWanita: 30000,
@@ -677,7 +760,7 @@ export default {
         JaketHoodie: 29000,
         SeragamOlahraga: 31000
       }
-      return priceMap[key] || 0
+      return priceMap[modelName] || 0
     }
 
     function totalPrice() {
@@ -825,6 +908,14 @@ export default {
           console.log('[Dashboard] No valid size_fields to include');
         }
         
+        // Include unit_price if provided
+        if (newModel.value.unit_price !== null && newModel.value.unit_price !== '' && newModel.value.unit_price !== undefined) {
+          payload.unit_price = Number(newModel.value.unit_price);
+          console.log('[Dashboard] Including unit_price in payload:', payload.unit_price);
+        } else {
+          console.log('[Dashboard] No unit_price provided');
+        }
+        
         console.log('[Dashboard] Payload prepared:', JSON.stringify(payload, null, 2));
 
         // Step 4: Send API request
@@ -847,7 +938,7 @@ export default {
         console.log('[Dashboard] Step 7: Scheduling auto-close (2 seconds)');
         setTimeout(() => {
           console.log('[Dashboard] Auto-close timeout triggered');
-          newModel.value = { name: '', description: '', size_fields: [] };
+          newModel.value = { name: '', description: '', size_fields: [], unit_price: null };
           viewMode.value = 'list';
           modelCreateMsg.value = '';
           console.log('[Dashboard] Form reset and closed');
@@ -867,6 +958,132 @@ export default {
         console.error('[Dashboard] Error message set:', modelCreateMsg.value);
         console.error('[Dashboard] === Model creation failed ===');
         console.error('[Dashboard] ========================================');
+      }
+    }
+
+    // Start editing a model
+    function startEditModel(model) {
+      console.log('[Dashboard] Starting model edit:', model.name);
+      editingModelId.value = model.models_id;
+      editForm.value = {
+        name: model.name || '',
+        description: model.description || '',
+        unit_price: model.unit_price || null
+      };
+    }
+
+    // Cancel model editing
+    function cancelEditModel() {
+      console.log('[Dashboard] Cancelling model edit');
+      editingModelId.value = null;
+      editForm.value = { name: '', description: '', unit_price: null };
+    }
+
+    // Save edited model
+    async function saveEditModel() {
+      console.log('[Dashboard] === Saving model edits ===');
+      try {
+        if (!editingModelId.value) {
+          throw new Error('No model selected for editing');
+        }
+
+        console.log('[Dashboard] Preparing update payload');
+        const payload = {};
+        
+        if (editForm.value.name && editForm.value.name.trim()) {
+          payload.name = editForm.value.name.trim();
+        }
+        
+        if (editForm.value.description !== undefined) {
+          payload.description = editForm.value.description?.trim() || null;
+        }
+        
+        if (editForm.value.unit_price !== undefined && editForm.value.unit_price !== null && editForm.value.unit_price !== '') {
+          payload.unit_price = Number(editForm.value.unit_price);
+        }
+
+        console.log('[Dashboard] Update payload:', payload);
+
+        if (Object.keys(payload).length === 0) {
+          throw new Error('No changes to save');
+        }
+
+        console.log('[Dashboard] Sending PATCH /models/:id request');
+        const token = getToken();
+        const response = await fetch(`/api/models/${editingModelId.value}`, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          throw new Error(error.error || `Update failed: ${response.status}`);
+        }
+
+        const updated = await response.json();
+        console.log('[Dashboard] ✓ Model updated successfully:', updated);
+
+        // Reload models
+        await loadModels();
+
+        // Clear edit state
+        editingModelId.value = null;
+        editForm.value = { name: '', description: '', unit_price: null };
+
+        alert('Model updated successfully!');
+      } catch (err) {
+        console.error('[Dashboard] ❌ Failed to update model:', err);
+        alert('Failed to update model: ' + (err.message || err));
+      }
+    }
+
+    // Delete a model
+    async function deleteModel(model) {
+      console.log('[Dashboard] === Deleting model ===');
+      console.log('[Dashboard] Model:', model.name);
+
+      if (!confirm(`Are you sure you want to delete the model "${model.name}"?\n\nThis action cannot be undone. If this model is used by existing orders, the deletion will be prevented.`)) {
+        console.log('[Dashboard] Delete cancelled by user');
+        return;
+      }
+
+      try {
+        console.log('[Dashboard] Sending DELETE /models/:id request');
+        const token = getToken();
+        const response = await fetch(`/api/models/${model.models_id}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          
+          // Handle foreign key constraint
+          if (response.status === 409) {
+            console.warn('[Dashboard] ⚠️  Cannot delete: Model is referenced by orders');
+            alert(error.error || 'Cannot delete model that is referenced by existing orders.\n\nConsider archiving instead.');
+            return;
+          }
+          
+          throw new Error(error.error || `Delete failed: ${response.status}`);
+        }
+
+        const result = await response.json();
+        console.log('[Dashboard] ✓ Model deleted successfully:', result);
+
+        // Reload models
+        await loadModels();
+
+        alert('Model deleted successfully!');
+      } catch (err) {
+        console.error('[Dashboard] ❌ Failed to delete model:', err);
+        alert('Failed to delete model: ' + (err.message || err));
       }
     }
 
@@ -918,7 +1135,13 @@ export default {
       modelCreateMsg,
       addSizeField,
       removeSizeField,
-      createModel
+      createModel,
+      editingModelId,
+      editForm,
+      startEditModel,
+      cancelEditModel,
+      saveEditModel,
+      deleteModel
     }
   }
 }
