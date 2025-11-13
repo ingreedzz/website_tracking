@@ -1,3 +1,213 @@
+### November 13, 2025 - Safe Role Column Removal Implementation
+
+**Major Refactoring: Eliminated `role` Column Dependency**
+
+This update refactors the entire application to use the `is_admin` boolean field instead of the `role` string column, preparing for safe removal of the `role` column from the Supabase users table.
+
+**Backend Changes (backend/routes/index.js):**
+
+1. **Registration Endpoint** (Lines 101-162):
+   - Now creates users with only `is_admin` field
+   - Removed `role` field from user creation
+   - JWT token includes derived `role` from `is_admin`
+   - `is_admin = true` → `role = 'admin'`
+   - `is_admin = false` → `role = 'customer'`
+   - Removed retry logic for missing role column (no longer needed)
+   - Updated all logging to reflect is_admin-based logic
+
+2. **Login Endpoint** (Lines 282-329):
+   - Derives `role` from `is_admin` when generating JWT
+   - JWT payload contains both `is_admin` and derived `role`
+   - Role field in JWT for backward compatibility with frontend
+   - Updated logging to show derived role
+
+3. **Middleware (backend/middleware/auth.js)**:
+   - Already had correct fallback: `role: payload.role || (payload.is_admin ? 'admin' : 'customer')`
+   - No changes needed - continues to work perfectly
+
+**Frontend Changes:**
+
+1. **src/lib/supabase.js** (Lines 34-53):
+   - `getProfile()` no longer fetches `role` column
+   - Changed SELECT to: `'users_id,email,name,phone,is_admin,created_at'`
+   - Derives role from is_admin: `role: udata.is_admin ? 'admin' : 'customer'`
+   - Returns consistent user object with derived role
+
+2. **src/router/index.js** (Lines 29-37):
+   - Updated navigation guard to check both fields
+   - `const isAdmin = user.is_admin || user.role === 'admin'`
+   - Backward compatible during migration period
+
+3. **src/views/AdminDashboard.vue** (Lines 89-100):
+   - Admin check now uses `is_admin` field
+   - `const isAdmin = user?.is_admin || user?.role === 'admin'`
+   - Logs show is_admin status instead of role
+
+4. **src/views/AdminOrderDetail.vue** (Lines 227-238):
+   - Admin check now uses `is_admin` field
+   - Same dual check pattern as AdminDashboard
+   - Consistent with other views
+
+5. **Other Views (No Changes Needed)**:
+   - Dashboard.vue already had: `isAdmin.value = payload.is_admin || payload.role === 'admin'`
+   - Payment.vue already had: `const isAdmin = user?.is_admin || user?.role === 'admin'`
+   - Navbar.vue already had: `isAdmin.value = (u.role === 'admin' || u.is_admin === true)`
+
+**GitHub Actions Workflow:**
+
+Created `.github/workflows/remove-role-column.yml` - Secure workflow for safe role column removal:
+
+**Features:**
+- Manual trigger only (workflow_dispatch)
+- Requires confirmation text: "REMOVE ROLE COLUMN" (case-sensitive)
+- Option to create backup (enabled by default)
+- Uses SUPABASE_SERVICE_ROLE secret (not exposed in logs)
+- Minimal permissions (contents: read)
+
+**Steps:**
+1. ✅ Validates confirmation input
+2. ✅ Validates environment variables (SUPABASE_URL, SUPABASE_SERVICE_ROLE)
+3. ✅ Installs PostgreSQL client
+4. ✅ Pre-flight check - verifies users table and role column exist
+5. ✅ Creates timestamped backup table (users_role_backup_YYYYMMDD_HHMMSS)
+6. ✅ Executes ALTER TABLE to drop role column
+7. ✅ Post-migration verification (confirms column removed, is_admin exists)
+8. ✅ Displays comprehensive summary and next steps
+
+**Safety Features:**
+- Automatic backup before any changes
+- Multiple validation checkpoints
+- Detailed logging at each step
+- Verification after migration
+- Clear rollback instructions
+
+**Documentation Created:**
+
+1. **backend/database/README_REMOVE_ROLE.md** (Comprehensive guide):
+   - Automated workflow instructions
+   - Manual SQL alternative
+   - Testing checklist (10+ test cases)
+   - Troubleshooting section
+   - Complete list of code changes
+   - Rollback procedures
+
+2. **ROLE_REMOVAL_SECURITY.md** (Security analysis):
+   - CodeQL analysis results (3 intentional debug log alerts)
+   - Security assessment of all changes
+   - No new vulnerabilities introduced
+   - Recommendations for before/after workflow
+   - Production hardening suggestions
+
+3. **ROLE_REMOVAL_TESTING.md** (Testing guide):
+   - Phase 1: Pre-migration testing (10 test cases)
+   - Phase 2: Database migration steps
+   - Phase 3: Post-migration testing
+   - Smoke test instructions
+   - Rollback procedures
+   - Common issues and solutions
+   - Success criteria
+
+**How It Works:**
+
+**Current State (Role Column Present):**
+- Code checks both `is_admin` and `role` for backward compatibility
+- New users created with only `is_admin` field
+- Existing users have both fields (role may be populated)
+- JWT tokens contain both `is_admin` and derived `role`
+
+**After Workflow Execution (Role Column Removed):**
+- Database no longer has `role` column
+- Backup table preserves old data (timestamped)
+- Application works identically using `is_admin` only
+- JWT tokens still contain derived `role` for client compatibility
+- All authorization checks work via `is_admin`
+
+**Testing & Validation:**
+
+Build Status:
+- ✅ Frontend build successful: 316.14 KB bundle (gzip: 95.24 kB)
+- ✅ Backend syntax validation passed (Node.js -c)
+- ✅ No compilation errors
+- ✅ All files validated successfully
+
+CodeQL Security Scan:
+- ⚠️ 3 alerts (all intentional debug logging, documented in ROLE_REMOVAL_SECURITY.md)
+- ✅ No actual security vulnerabilities
+- ✅ No new risks introduced
+- ✅ All alerts server-side only, not exposed to clients
+
+**Files Modified:**
+- `backend/routes/index.js` - Registration/login endpoints refactored (85 lines changed)
+- `src/lib/supabase.js` - Remove role from SELECT, derive from is_admin (18 lines changed)
+- `src/router/index.js` - Update navigation guard (4 lines changed)
+- `src/views/AdminDashboard.vue` - Update admin check (7 lines changed)
+- `src/views/AdminOrderDetail.vue` - Update admin check (7 lines changed)
+- `dist/index.html` - Rebuilt frontend assets
+
+**Files Created:**
+- `.github/workflows/remove-role-column.yml` - Automated workflow (226 lines)
+- `backend/database/README_REMOVE_ROLE.md` - Updated comprehensive guide (238 lines)
+- `ROLE_REMOVAL_SECURITY.md` - Security analysis (130 lines)
+- `ROLE_REMOVAL_TESTING.md` - Testing guide (318 lines)
+
+**Migration Strategy:**
+
+1. **Deploy Code First** (without DB migration):
+   - Deploy backend to Render
+   - Deploy frontend to Vercel
+   - Test all functionality (Phase 1 tests)
+   - Verify models, orders, admin access work
+
+2. **Execute Workflow When Ready**:
+   - Navigate to GitHub Actions
+   - Run "Remove Role Column from Users Table"
+   - Enter confirmation text
+   - Enable backup option
+   - Monitor execution
+
+3. **Test After Migration** (Phase 3 tests):
+   - Verify all functionality still works
+   - Test new user registration
+   - Test existing user login
+   - Confirm admin access
+   - Check models and orders
+
+4. **Rollback if Needed**:
+   - Use backup table created by workflow
+   - Follow SQL in README_REMOVE_ROLE.md
+   - Restore role column and data
+
+**Benefits:**
+
+✅ **Simpler Database** - One less column to manage
+✅ **Single Source of Truth** - Role derived from is_admin prevents mismatches
+✅ **Backward Compatible** - Works before, during, and after migration
+✅ **Safe Migration** - Automatic backup, validation, verification
+✅ **Comprehensive Testing** - 10+ test cases documented
+✅ **Clear Rollback** - Easy to restore if needed
+✅ **Security Reviewed** - CodeQL analyzed, no vulnerabilities
+✅ **Well Documented** - 3 comprehensive guides created
+
+**Next Steps for Owner:**
+
+1. Review the changes in this PR
+2. Deploy to staging/production (code only, no DB changes yet)
+3. Run Phase 1 tests from ROLE_REMOVAL_TESTING.md
+4. Verify models feature works (dynamic vs hardcoded size fields)
+5. When confident, trigger GitHub Actions workflow
+6. Run Phase 3 tests after workflow completes
+7. Monitor for any issues
+
+**Important Notes:**
+
+- The role column can remain in database indefinitely - code works either way
+- Workflow creates backup automatically before any changes
+- All authorization continues to work during transition
+- JWT tokens maintain backward compatibility
+- No breaking changes for existing users
+
+---
+
 ### November 13, 2025 - Navbar UI Adjustments and Enhanced Debug Logging
 
 **UI Changes:**
