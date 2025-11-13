@@ -151,8 +151,9 @@ router.post('/register', async (req, res) => {
       console.log(`[REQ:${requestId}] [REGISTER] Step 7: Generating JWT token`);
       const payload = { 
         users_id: created.users_id, 
-        email: created.email, 
-        role: created.role || 'customer' 
+        email: created.email,
+        is_admin: !!created.is_admin,
+        role: created.role || (created.is_admin ? 'admin' : 'customer') 
       };
       const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
       console.log(`[REQ:${requestId}] [REGISTER] ✓ JWT token generated`);
@@ -167,17 +168,42 @@ router.post('/register', async (req, res) => {
       if (createErr.response) {
         console.error(`[REQ:${requestId}] [REGISTER] Response status:`, createErr.response.status);
         console.error(`[REQ:${requestId}] [REGISTER] Response data:`, JSON.stringify(createErr.response.data));
-        
+
+        // If the role column doesn't exist, retry without it (safe migration path)
+        const errMsg = (createErr.response.data && (createErr.response.data.message || JSON.stringify(createErr.response.data))) || createErr.message;
+        if (typeof errMsg === 'string' && errMsg.includes('column') && errMsg.includes('role')) {
+          console.warn(`[REQ:${requestId}] [REGISTER] ⚠️  'role' column missing in DB, retrying without role`);
+          const retryBody = [{ name, email, password: hashed, phone: phone || null, is_admin: isAdmin }];
+          try {
+            const retryResp = await axios.post(url, retryBody, { headers: { ...SB_HEADERS, Prefer: 'return=representation' }, timeout: 10000 });
+            const created2 = Array.isArray(retryResp.data) && retryResp.data.length ? retryResp.data[0] : null;
+            if (!created2) {
+              console.error(`[REQ:${requestId}] [REGISTER] ❌ Retry returned no data`);
+              return res.status(500).json({ error: 'Failed to create user (retry)' });
+            }
+            if (created2.password) delete created2.password;
+            console.log(`[REQ:${requestId}] [REGISTER] ✓ User created successfully (without role)`);
+            console.log(`[REQ:${requestId}] [REGISTER] User ID:`, created2.users_id);
+            // Generate token based on is_admin
+            const payload2 = { users_id: created2.users_id, email: created2.email, is_admin: !!created2.is_admin, role: created2.role || (created2.is_admin ? 'admin' : 'customer') };
+            const token2 = jwt.sign(payload2, JWT_SECRET, { expiresIn: '7d' });
+            return res.status(201).json({ user: created2, token: token2 });
+          } catch (retryErr) {
+            console.error(`[REQ:${requestId}] [REGISTER] ❌ Retry failed:`, retryErr.message);
+            // fall through to standard error handling below
+          }
+        }
+
         if (createErr.response.status === 409) {
           return res.status(409).json({ error: 'Email already registered' });
         }
       }
-      
+
       if (createErr.code === 'ECONNABORTED') {
         console.error(`[REQ:${requestId}] [REGISTER] Request timeout`);
         return res.status(504).json({ error: 'Database request timeout' });
       }
-      
+
       const msg = createErr.response?.data || createErr.message;
       res.status(400).json({ 
         error: msg,
@@ -282,13 +308,15 @@ router.post('/login', async (req, res) => {
       const payload = { 
         users_id: data.users_id, 
         email: data.email, 
-        role: data.role || 'customer' 
+        is_admin: !!data.is_admin,
+        role: data.role || (data.is_admin ? 'admin' : 'customer') 
       };
       
       console.log(`[REQ:${requestId}] [LOGIN] Token payload:`, {
         users_id: payload.users_id,
         email: payload.email,
-        role: payload.role
+        role: payload.role,
+        is_admin: payload.is_admin
       });
       
       const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
@@ -336,9 +364,19 @@ router.post('/login', async (req, res) => {
 router.get('/users', verifyToken, requireAdmin, async (req, res) => {
   try {
     if (!REST_BASE) return res.status(500).json({ error: 'Supabase not configured' })
-    const url = `${REST_BASE}/users?select=users_id,name,email,phone,role`;
+    // Request is_admin instead of role; compute role from is_admin for compatibility
+    const url = `${REST_BASE}/users?select=users_id,name,email,phone,is_admin`;
     const resp = await axios.get(url, { headers: SB_HEADERS });
-    res.json(Array.isArray(resp.data) ? resp.data : []);
+    const rows = Array.isArray(resp.data) ? resp.data : [];
+    const mapped = rows.map(r => ({
+      users_id: r.users_id,
+      name: r.name,
+      email: r.email,
+      phone: r.phone,
+      is_admin: !!r.is_admin,
+      role: r.role || (r.is_admin ? 'admin' : 'customer')
+    }));
+    res.json(mapped);
   } catch (err) {
     console.error('[USERS] axios error', err && err.response ? { status: err.response.status, data: err.response.data } : err.message)
     res.status(500).json({ error: err.message });

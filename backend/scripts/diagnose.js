@@ -152,7 +152,8 @@ async function checkUserTable() {
   }
   
   try {
-    const url = `${REST_BASE}/users?select=users_id,email,name,role,is_admin,created_at&limit=5`;
+    // Prefer is_admin (boolean). role column may be removed in newer schemas.
+    const url = `${REST_BASE}/users?select=users_id,email,name,is_admin,created_at&limit=5`;
     const resp = await axios.get(url, { 
       headers: SB_HEADERS,
       timeout: 5000
@@ -170,15 +171,16 @@ async function checkUserTable() {
     }
     
     console.log('');
-    const adminUsers = users.filter(u => u.role === 'admin');
-    const customerUsers = users.filter(u => u.role === 'customer' || !u.role);
+    const adminUsers = users.filter(u => u.is_admin || u.role === 'admin');
+    const customerUsers = users.filter(u => !u.is_admin && (u.role === 'customer' || !u.role));
     
     info(`Breakdown: ${adminUsers.length} admin(s), ${customerUsers.length} customer(s)`);
     console.log('');
     
     users.forEach((user, idx) => {
-      const roleColor = user.role === 'admin' ? 'yellow' : 'white';
-      log(`${idx + 1}. ${user.email} (${user.role || 'customer'})`, roleColor);
+      const derivedRole = user.role || (user.is_admin ? 'admin' : 'customer');
+      const roleColor = derivedRole === 'admin' ? 'yellow' : 'white';
+      log(`${idx + 1}. ${user.email} (${derivedRole})`, roleColor);
       info(`   ID: ${user.users_id.substring(0, 8)}...`);
       info(`   Name: ${user.name}`);
       info(`   Created: ${user.created_at}`);

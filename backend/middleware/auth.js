@@ -68,7 +68,9 @@ function verifyToken(req, res, next) {
         id: userId,
         users_id: userId,
         email: payload.email || null,
-        role: payload.role || 'customer'
+        // Prefer explicit role claim, otherwise use is_admin boolean to derive role
+        is_admin: !!payload.is_admin,
+        role: payload.role || (payload.is_admin ? 'admin' : 'customer')
       };
       
       console.log(`[REQ:${requestId}] [AUTH] ✓ User authenticated:`, {

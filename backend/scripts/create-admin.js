@@ -72,7 +72,7 @@ async function createAdminUser(email, password, name, phone) {
     if (existing) {
       console.log('⚠️  User already exists!');
       console.log(`  User ID: ${existing.users_id}`);
-      console.log(`  Current Role: ${existing.role}`);
+      console.log(`  Current Role: ${existing.role || (existing.is_admin ? 'admin' : 'customer')}`);
       console.log('');
       
       // If user exists but is not admin, offer to update
@@ -80,7 +80,17 @@ async function createAdminUser(email, password, name, phone) {
         console.log('[2/4] Updating existing user to admin role...');
         const updateUrl = `${REST_BASE}/users?users_id=eq.${encodeURIComponent(existing.users_id)}`;
         const updateBody = { role: 'admin', is_admin: true };
-        await axios.patch(updateUrl, updateBody, { headers: SB_HEADERS });
+        try {
+          await axios.patch(updateUrl, updateBody, { headers: SB_HEADERS });
+        } catch (uErr) {
+          // If role column doesn't exist, still set is_admin
+          if (uErr.response && (String(uErr.response.data).includes('column') && String(uErr.response.data).includes('role'))) {
+            console.warn('Role column missing; updating is_admin only');
+            await axios.patch(updateUrl, { is_admin: true }, { headers: SB_HEADERS });
+          } else {
+            throw uErr;
+          }
+        }
         console.log('✓ User role updated to admin');
         console.log('');
         console.log('==========================================');
@@ -128,7 +138,19 @@ async function createAdminUser(email, password, name, phone) {
       is_admin: true
     }];
     
-    const resp = await axios.post(url, body, { headers: SB_HEADERS });
+    let resp;
+    try {
+      resp = await axios.post(url, body, { headers: SB_HEADERS });
+    } catch (postErr) {
+      // Retry without role if column missing
+      const errMsg = postErr.response && (postErr.response.data && (postErr.response.data.message || JSON.stringify(postErr.response.data))) || postErr.message;
+      if (typeof errMsg === 'string' && errMsg.includes('column') && errMsg.includes('role')) {
+        console.warn('Role column missing; retrying admin creation without role column');
+        resp = await axios.post(url, [{ name, email, password: hashed, phone: phone || null, is_admin: true }], { headers: SB_HEADERS });
+      } else {
+        throw postErr;
+      }
+    }
     const created = Array.isArray(resp.data) && resp.data.length ? resp.data[0] : null;
     
     if (!created) {
