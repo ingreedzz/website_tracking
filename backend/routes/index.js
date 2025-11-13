@@ -366,12 +366,9 @@ router.get('/users', verifyToken, requireAdmin, async (req, res) => {
   }
 });
 
-router.get('/orders', verifyToken, requireAdmin, async (req, res) => {
-  console.log('[GET /orders] === Fetching all orders for admin ===');
+router.get('/orders', async (req, res) => {
+  console.log('[GET /orders] === Fetching all orders (no auth required) ===');
   console.log('[GET /orders] Timestamp:', new Date().toISOString());
-  const requestUserId = req.user?.users_id || req.user?.user_id || null;
-  const isAdminUser = !!req.user?.is_admin;
-  console.log('[GET /orders] Admin user:', { users_id: requestUserId, is_admin: isAdminUser });
   
   try {
     // Step 1: Validate Supabase configuration
@@ -823,19 +820,18 @@ router.get('/payments', verifyToken, requireAdmin, async (req, res) => {
 })
 
 // Create order (used by frontend: POST /api/server/orders)
-router.post('/server/orders', verifyToken, upload.single('file'), async (req, res) => {
+router.post('/server/orders', upload.single('file'), async (req, res) => {
   const requestId = req.id || 'unknown';
   const orderStartTime = Date.now();
   
   console.log(`[REQ:${requestId}] [ORDER] ${'='.repeat(60)}`);
-  console.log(`[REQ:${requestId}] [ORDER] === New Order Creation Request ===`);
+  console.log(`[REQ:${requestId}] [ORDER] === New Order Creation Request (No Auth) ===`);
   console.log(`[REQ:${requestId}] [ORDER] Timestamp: ${new Date().toISOString()}`);
   console.log(`[REQ:${requestId}] [ORDER] ${'='.repeat(60)}`);
   
   console.log(`[REQ:${requestId}] [ORDER] Request Details:`);
   console.log(`[REQ:${requestId}] [ORDER]   Content-Type: ${req.headers['content-type']}`);
   console.log(`[REQ:${requestId}] [ORDER]   Content-Length: ${req.headers['content-length'] || 'unknown'}`);
-  console.log(`[REQ:${requestId}] [ORDER]   Authorization: ${req.headers.authorization ? 'Bearer <present>' : 'missing'}`);
   console.log(`[REQ:${requestId}] [ORDER]   User-Agent: ${(req.headers['user-agent'] || 'unknown').substring(0, 50)}`);
   
   console.log(`[REQ:${requestId}] [ORDER] Body Fields:`, Object.keys(req.body));
@@ -852,40 +848,32 @@ router.post('/server/orders', verifyToken, upload.single('file'), async (req, re
   } else {
     console.log(`[REQ:${requestId}] [ORDER] File: NO FILE UPLOADED`);
   }
-  
-  if (req.user) {
-    console.log(`[REQ:${requestId}] [ORDER] User from Token:`);
-    console.log(`[REQ:${requestId}] [ORDER]   User ID: ${req.user.users_id || req.user.user_id || 'not found'}`);
-    console.log(`[REQ:${requestId}] [ORDER]   Email: ${req.user.email || 'not set'}`);
-    console.log(`[REQ:${requestId}] [ORDER]   is_admin: ${!!req.user.is_admin}`);
-  } else {
-    console.error(`[REQ:${requestId}] [ORDER] User: NO USER ON REQUEST`);
-  }
 
   try {
-    // User is already authenticated via middleware
+    // No authentication required - use a default admin user ID
     console.log(`[REQ:${requestId}] [ORDER] ${'─'.repeat(60)}`);
-    console.log(`[REQ:${requestId}] [ORDER] STEP 1: VALIDATING AUTHENTICATION`);
+    console.log(`[REQ:${requestId}] [ORDER] STEP 1: SETTING DEFAULT USER`);
     console.log(`[REQ:${requestId}] [ORDER] ${'─'.repeat(60)}`);
     
     const step1Start = Date.now();
-    const userId = req.user && req.user.users_id ? req.user.users_id : (req.user && req.user.user_id ? req.user.user_id : null);
-    
-    console.log(`[REQ:${requestId}] [ORDER] Extracted User ID: ${userId || 'NULL'}`);
-    console.log(`[REQ:${requestId}] [ORDER] req.user structure:`, JSON.stringify(req.user, null, 2));
-    
-    if (!userId) {
-      console.error(`[REQ:${requestId}] [ORDER] ❌ ERROR: No user ID available`);
-      console.error(`[REQ:${requestId}] [ORDER] Available fields on req.user:`, Object.keys(req.user || {}));
-      return res.status(401).json({ 
-        error: 'Authentication required',
-        details: 'User ID not found in token',
-        code: 'MISSING_USER_ID'
+    // Use a default/admin user ID (you may want to create a specific admin user in Supabase)
+    // For now, we'll try to get the first user or use null
+    let userId = null;
+    try {
+      const usersResp = await axios.get(`${REST_BASE}/users?select=users_id&is_admin=eq.true&limit=1`, {
+        headers: SB_HEADERS,
+        timeout: 5000
       });
+      if (usersResp.data && usersResp.data.length > 0) {
+        userId = usersResp.data[0].users_id;
+        console.log(`[REQ:${requestId}] [ORDER] Using admin user ID: ${userId}`);
+      }
+    } catch (userErr) {
+      console.warn(`[REQ:${requestId}] [ORDER] Could not fetch admin user, will use null`);
     }
     
     const step1Duration = Date.now() - step1Start;
-    console.log(`[REQ:${requestId}] [ORDER] ✓ Authentication validated (${step1Duration}ms)`);
+    console.log(`[REQ:${requestId}] [ORDER] ✓ User ID set to: ${userId || 'NULL'} (${step1Duration}ms)`);
 
     // validate body
     console.log(`[REQ:${requestId}] [ORDER] ${'─'.repeat(60)}`);
@@ -1556,9 +1544,9 @@ router.get('/models', async (req, res) => {
 });
 
 // Create a new model (admin only)
-router.post('/models', verifyToken, requireAdmin, async (req, res) => {
+router.post('/models', async (req, res) => {
   const requestId = req.id || 'unknown';
-  console.log(`[REQ:${requestId}] [MODELS] === Create model ===`);
+  console.log(`[REQ:${requestId}] [MODELS] === Create model (no auth required) ===`);
   try {
     const { name, description, size_fields } = req.body;
     if (!name) return res.status(400).json({ error: 'name required' });

@@ -1,11 +1,105 @@
 <template>
   <section class="dashboard container py-6">
     <div class="flex items-center justify-between mb-4">
-      <h2 class="text-xl font-bold">Dashboard</h2>
+      <h2 class="text-xl font-bold">Admin Order Tracking Dashboard</h2>
       <div class="space-x-2">
         <button @click="viewMode = 'create'" class="px-3 py-2 bg-blue-500 text-white rounded">Make New Order</button>
+        <button @click="viewMode = 'models'" class="px-3 py-2 bg-green-600 text-white rounded">Manage Models</button>
         <button @click="viewMode = 'list'" class="px-3 py-2 bg-gray-700 text-white rounded">Show Orders</button>
-        <button @click="logout" class="px-3 py-2 bg-red-500 text-white rounded">Log out</button>
+      </div>
+    </div>
+
+    <!-- Model Management Section -->
+    <div v-if="viewMode === 'models'" class="bg-white p-6 rounded shadow">
+      <h3 class="font-semibold mb-4 text-lg">Model Management</h3>
+      
+      <!-- Create New Model Form -->
+      <div class="bg-gray-50 p-4 rounded mb-6">
+        <h4 class="font-semibold mb-3">Create New Model</h4>
+        <form @submit.prevent="handleCreateModel">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <label class="block">
+              <div class="text-sm font-medium mb-1">Model Name <span class="text-red-500">*</span></div>
+              <input v-model="newModel.name" placeholder="e.g., Kaos Polo" class="w-full border rounded px-3 py-2" required />
+            </label>
+            <label class="block">
+              <div class="text-sm font-medium mb-1">Description</div>
+              <input v-model="newModel.description" placeholder="Short description" class="w-full border rounded px-3 py-2" />
+            </label>
+          </div>
+          
+          <!-- Size Field Configuration -->
+          <div class="mt-4">
+            <div class="text-sm font-medium mb-2">Size Fields Configuration</div>
+            <div class="text-xs text-gray-600 mb-3">Select which size fields this model should have. You can add custom fields below.</div>
+            
+            <!-- Predefined Size Field Checkboxes -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+              <label v-for="field in availableSizeFields" :key="field.key" class="flex items-center space-x-2 text-sm">
+                <input type="checkbox" :value="field" v-model="newModel.selectedFields" class="rounded" />
+                <span>{{ field.label }}</span>
+              </label>
+            </div>
+            
+            <!-- Custom Size Field Input -->
+            <div class="border-t pt-3">
+              <div class="text-sm font-medium mb-2">Add Custom Size Field</div>
+              <div class="grid grid-cols-4 gap-2">
+                <input v-model="customField.label" placeholder="Label (e.g., Panjang Kaki)" class="border rounded px-2 py-1" />
+                <input v-model="customField.key" placeholder="Key (e.g., panjang_kaki)" class="border rounded px-2 py-1" />
+                <select v-model="customField.type" class="border rounded px-2 py-1">
+                  <option value="number">Number</option>
+                  <option value="text">Text</option>
+                </select>
+                <div class="flex gap-2">
+                  <input v-model="customField.unit" placeholder="Unit (cm)" class="border rounded px-2 py-1 flex-1" />
+                  <button type="button" @click="addCustomField" class="px-3 py-1 bg-blue-500 text-white rounded text-sm">Add</button>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Selected Fields Preview -->
+            <div v-if="newModel.selectedFields.length > 0" class="mt-3 p-3 bg-blue-50 rounded">
+              <div class="text-sm font-medium mb-2">Selected Fields ({{ newModel.selectedFields.length }}):</div>
+              <div class="flex flex-wrap gap-2">
+                <span v-for="(field, idx) in newModel.selectedFields" :key="idx" class="inline-flex items-center px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
+                  {{ field.label }} ({{ field.type }})
+                  <button type="button" @click="removeField(idx)" class="ml-2 text-blue-600 hover:text-blue-800">×</button>
+                </span>
+              </div>
+            </div>
+          </div>
+          
+          <div class="mt-4 flex items-center space-x-3">
+            <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded">Create Model</button>
+            <button type="button" @click="resetModelForm" class="px-4 py-2 bg-gray-300 rounded">Reset</button>
+          </div>
+          
+          <div v-if="modelMessage" class="mt-3 p-3 rounded" :class="modelMessageType === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'">
+            {{ modelMessage }}
+          </div>
+        </form>
+      </div>
+      
+      <!-- Existing Models List -->
+      <div>
+        <h4 class="font-semibold mb-3">Existing Models ({{ modelOptions.length }})</h4>
+        <div v-if="modelOptions.length === 0" class="text-gray-500 text-sm">No models found. Create your first model above.</div>
+        <div v-else class="space-y-3">
+          <div v-for="model in modelOptions" :key="model.key" class="border rounded p-4">
+            <div class="flex justify-between items-start">
+              <div>
+                <h5 class="font-semibold">{{ model.label }}</h5>
+                <div class="text-sm text-gray-600 mt-1">
+                  {{ model.fields.length }} size field(s):
+                  <span v-for="(field, idx) in model.fields" :key="idx" class="inline-block ml-2 text-xs bg-gray-100 px-2 py-1 rounded">
+                    {{ field.label }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -155,9 +249,8 @@
 import OrderCard from '../components/OrderCard.vue'
 import { ref, onMounted, reactive } from 'vue'
 import { useRouter } from 'vue-router'
-import { supabase, getProfile } from '../lib/supabase'
-import { getCurrentUser, getToken, decodeToken, clearToken, getSupabaseAccessToken } from '../lib/auth'
-import { apiGet, apiPostFormData } from '../lib/api'
+import { supabase } from '../lib/supabase'
+import { apiGet, apiPostFormData, apiPost } from '../lib/api'
 
 export default {
   name: 'Dashboard',
@@ -166,8 +259,6 @@ export default {
     const router = useRouter()
     const orders = ref([])
     const loading = ref(false)
-    const isAdmin = ref(false)
-    const userId = ref(null)
     const viewMode = ref('list')
 
   const form = reactive({ product: '', model: '', size: '', color: '', address: '', phone: '', quantity: 1, custom: {}, deadline: '', customer_name: '', order_name: '' })
@@ -180,38 +271,35 @@ export default {
     // Model options - will be fetched from backend or use fallback
     const modelOptions = ref([])
     
-    // Fallback model options with hardcoded fields (used if backend doesn't have models or size_fields)
-    const fallbackModelOptions = [
-      { key: 'SetelanAnakPria', label: 'Setelan Anak Pria', fields: [
-        { key: 'lingkar_dada', label: 'Lingkar Dada', type: 'number', unit: 'cm' },
-        { key: 'panjang_baju', label: 'Panjang Baju', type: 'number', unit: 'cm' },
-        { key: 'panjang_celana', label: 'Panjang Celana', type: 'number', unit: 'cm' },
-        { key: 'lingkar_pinggang', label: 'Lingkar Pinggang', type: 'number', unit: 'cm' }
-      ] },
-      { key: 'SetelanAnakWanita', label: 'Setelan Anak Wanita', fields: [
-        { key: 'lingkar_dada', label: 'Lingkar Dada', type: 'number', unit: 'cm' },
-        { key: 'panjang_baju', label: 'Panjang Baju', type: 'number', unit: 'cm' },
-        { key: 'panjang_celana', label: 'Panjang Celana', type: 'number', unit: 'cm' },
-        { key: 'lingkar_pinggang', label: 'Lingkar Pinggang', type: 'number', unit: 'cm' }
-      ] },
-      { key: 'KaosOblongDewasa', label: 'Kaos Oblong Dewasa', fields: [
-        { key: 'lingkar_dada', label: 'Lingkar Dada', type: 'number', unit: 'cm' },
-        { key: 'panjang_baju', label: 'Panjang Baju', type: 'number', unit: 'cm' },
-        { key: 'panjang_lengan', label: 'Panjang Lengan', type: 'number', unit: 'cm' }
-      ] },
-      { key: 'JaketHoodie', label: 'Jaket / Hoodie', fields: [
-        { key: 'lingkar_dada', label: 'Lingkar Dada', type: 'number', unit: 'cm' },
-        { key: 'panjang_baju', label: 'Panjang Baju', type: 'number', unit: 'cm' },
-        { key: 'panjang_lengan', label: 'Panjang Lengan', type: 'number', unit: 'cm' },
-        { key: 'ukuran_hoodie', label: 'Ukuran Hoodie', type: 'text', unit: '' }
-      ] },
-      { key: 'SeragamOlahraga', label: 'Seragam Olahraga', fields: [
-        { key: 'lingkar_dada', label: 'Lingkar Dada', type: 'number', unit: 'cm' },
-        { key: 'panjang_baju', label: 'Panjang Baju', type: 'number', unit: 'cm' },
-        { key: 'panjang_celana', label: 'Panjang Celana', type: 'number', unit: 'cm' }
-      ] }
+    // Model management
+    const newModel = ref({
+      name: '',
+      description: '',
+      selectedFields: []
+    })
+    const customField = ref({
+      label: '',
+      key: '',
+      type: 'number',
+      unit: 'cm'
+    })
+    const modelMessage = ref('')
+    const modelMessageType = ref('success')
+    
+    // Available predefined size fields
+    const availableSizeFields = [
+      { key: 'lingkar_dada', label: 'Lingkar Dada', type: 'number', unit: 'cm' },
+      { key: 'panjang_baju', label: 'Panjang Baju', type: 'number', unit: 'cm' },
+      { key: 'panjang_celana', label: 'Panjang Celana', type: 'number', unit: 'cm' },
+      { key: 'lingkar_pinggang', label: 'Lingkar Pinggang', type: 'number', unit: 'cm' },
+      { key: 'panjang_lengan', label: 'Panjang Lengan', type: 'number', unit: 'cm' },
+      { key: 'lebar_bahu', label: 'Lebar Bahu', type: 'number', unit: 'cm' },
+      { key: 'lingkar_leher', label: 'Lingkar Leher', type: 'number', unit: 'cm' },
+      { key: 'panjang_rok', label: 'Panjang Rok', type: 'number', unit: 'cm' }
     ]
-
+    
+    // Fallback model options with hardcoded fields (used if backend doesn't have models or size_fields)
+    
     // Load models from backend
     async function loadModels() {
       console.log('[Dashboard] === Loading models from backend ===');
@@ -235,29 +323,114 @@ export default {
                 }))
               };
             } else {
-              // No size_fields, try to match with fallback
-              const fallback = fallbackModelOptions.find(fm => fm.key === m.name || fm.label === m.name);
+              // No size_fields
               return {
                 key: m.name || m.models_id,
                 label: m.name || 'Unknown Model',
-                fields: fallback ? fallback.fields : []
+                fields: []
               };
             }
           });
           
           console.log('[Dashboard] Models converted:', modelOptions.value.length);
         } else {
-          console.warn('[Dashboard] No models from backend, using fallback');
-          modelOptions.value = fallbackModelOptions;
+          console.warn('[Dashboard] No models from backend');
+          modelOptions.value = [];
         }
       } catch (err) {
-        console.error('[Dashboard] Failed to load models, using fallback:', err.message);
-        modelOptions.value = fallbackModelOptions;
+        console.error('[Dashboard] Failed to load models:', err.message);
+        modelOptions.value = [];
       }
       
       // Ensure form.model is initialized to a valid model
       if (!form.model && modelOptions.value.length > 0) {
         form.model = modelOptions.value[0].key;
+      }
+    }
+
+    // Model management functions
+    function addCustomField() {
+      if (!customField.value.label || !customField.value.key) {
+        alert('Please enter both label and key for the custom field');
+        return;
+      }
+      
+      newModel.value.selectedFields.push({
+        key: customField.value.key,
+        label: customField.value.label,
+        type: customField.value.type,
+        unit: customField.value.unit
+      });
+      
+      // Reset custom field form
+      customField.value = {
+        label: '',
+        key: '',
+        type: 'number',
+        unit: 'cm'
+      };
+    }
+    
+    function removeField(index) {
+      newModel.value.selectedFields.splice(index, 1);
+    }
+    
+    function resetModelForm() {
+      newModel.value = {
+        name: '',
+        description: '',
+        selectedFields: []
+      };
+      customField.value = {
+        label: '',
+        key: '',
+        type: 'number',
+        unit: 'cm'
+      };
+      modelMessage.value = '';
+    }
+    
+    async function handleCreateModel() {
+      console.log('[Dashboard] === Creating new model ===');
+      modelMessage.value = '';
+      
+      try {
+        if (!newModel.value.name) {
+          throw new Error('Model name is required');
+        }
+        
+        if (newModel.value.selectedFields.length === 0) {
+          throw new Error('Please select at least one size field');
+        }
+        
+        const payload = {
+          name: newModel.value.name,
+          description: newModel.value.description || '',
+          size_fields: newModel.value.selectedFields
+        };
+        
+        console.log('[Dashboard] Creating model with payload:', payload);
+        
+        // Note: This endpoint requires admin auth, but since we're removing auth,
+        // we'll need to update the backend to not require it, or use a default token
+        const result = await apiPost('/models', payload);
+        console.log('[Dashboard] Model created:', result);
+        
+        modelMessage.value = `Model "${newModel.value.name}" created successfully!`;
+        modelMessageType.value = 'success';
+        
+        // Reload models to show the new one
+        await loadModels();
+        
+        // Reset form after successful creation
+        setTimeout(() => {
+          resetModelForm();
+        }, 2000);
+        
+      } catch (err) {
+        console.error('[Dashboard] Failed to create model:', err);
+        modelMessage.value = 'Failed to create model: ' + (err.message || err);
+        modelMessageType.value = 'error';
       }
     }
 
@@ -269,47 +442,23 @@ export default {
     async function load() {
       console.log('[Dashboard] === Loading orders ===');
       loading.value = true
-      const payload = getCurrentUser() || decodeToken(getToken())
-      if (!payload) {
-        console.log('[Dashboard] User not logged in');
-        loading.value = false
-        return
-      }
-      console.log('[Dashboard] User payload:', { users_id: payload.users_id, is_admin: payload.is_admin });
-      
-      // Use users_id from token
-      const uid = payload.users_id || null
-      if (!uid) {
-        console.error('[Dashboard] No users_id in token');
-        loading.value = false
-        return
-      }
-      userId.value = uid
-      // prefer the is_admin flag from token
-      isAdmin.value = !!payload.is_admin
-      console.log('[Dashboard] User is_admin:', isAdmin.value);
 
       try {
-        // Use different endpoint based on role
-        const endpoint = isAdmin.value ? '/orders' : '/user/orders';
-        console.log('[Dashboard] Fetching orders from', endpoint);
+        // Load all orders (admin view, no authentication required)
+        console.log('[Dashboard] Fetching all orders from /orders');
         
-        // Use API helper for authenticated request
         let orderData;
         try {
-          orderData = await apiGet(endpoint);
+          orderData = await apiGet('/orders');
         } catch (apiErr) {
           console.error('[Dashboard] API request failed');
-          console.error('[Dashboard] Error name:', apiErr.name);
           console.error('[Dashboard] Error message:', apiErr.message);
           
-          // Provide user-friendly error messages based on error type
+          // Provide user-friendly error messages
           if (apiErr.message.includes('502')) {
             throw new Error('Server is temporarily unavailable. Please try again in a moment.');
           } else if (apiErr.message.includes('504')) {
             throw new Error('Request timeout. The server took too long to respond.');
-          } else if (apiErr.message.includes('Authentication')) {
-            throw new Error('Your session has expired. Please log in again.');
           } else {
             throw new Error('Failed to load orders: ' + apiErr.message);
           }
@@ -327,14 +476,12 @@ export default {
             status: orders.value[0].status,
             payment_status: orders.value[0].payment_status
           });
-        } else {
-          console.log('[Dashboard] No orders found for user');
         }
       } catch (err) {
         console.error('[Dashboard] Failed to fetch orders', err)
         console.error('[Dashboard] Error details:', err.message);
         alert(err.message || 'Failed to load orders')
-        orders.value = []; // Ensure orders is an empty array on error
+        orders.value = [];
       }
       loading.value = false
       console.log('[Dashboard] === Load complete ===');
@@ -369,12 +516,6 @@ export default {
     async function handleCreate() {
       console.log('[FRONTEND] === Starting order creation ===');
       try {
-        if (!userId.value) {
-          console.error('[FRONTEND] User not logged in');
-          throw new Error('Not logged in');
-        }
-        console.log('[FRONTEND] User ID:', userId.value);
-        
         // require a sablon image
         if (!fileRef.value) {
           console.error('[FRONTEND] No sablon image selected');
@@ -408,7 +549,6 @@ export default {
         if (fileRef.value) fd.append('file', fileRef.value)
 
         console.log('[FRONTEND] Sending POST /server/orders via apiPostFormData...');
-        // Use API helper for authenticated request (handles Authorization)
         const json = await apiPostFormData('/server/orders', fd)
         const created = json.order
         if (created) {
@@ -419,22 +559,8 @@ export default {
             console.warn('[FRONTEND] Failed to preload public URL:', e);
           }
         }
-        alert('Order created (server upload)');
-        // redirect user to payment page for this order so they can upload proof (SPA navigation)
-        if (created && (created.id || created.orders_id)) {
-          const orderId = created.id || created.orders_id;
-          console.log('[FRONTEND] Redirecting to payment page for order:', orderId);
-          try {
-            await router.push({ name: 'Payment', query: { order: String(orderId) } });
-            console.log('[FRONTEND] Navigation to Payment successful');
-            return;
-          } catch (e) {
-            console.warn('[FRONTEND] router.push to Payment failed:', e.message || e);
-            console.warn('[FRONTEND] Falling back to list view');
-          }
-        } else {
-          console.warn('[FRONTEND] No valid order ID for navigation, staying on list view');
-        }
+        alert('Order created successfully!');
+        
         viewMode.value = 'list';
         // reset UI
         resetForm();
@@ -443,7 +569,6 @@ export default {
         console.error('[FRONTEND] === Order creation failed ===');
         console.error('[FRONTEND] Error:', err);
         console.error('[FRONTEND] Error message:', err.message);
-        console.error('[FRONTEND] Error stack:', err.stack);
         alert(err.message || String(err));
       }
     }
@@ -550,11 +675,6 @@ export default {
       }
     }
 
-    async function logout() {
-      clearToken()
-      try { await router.push({ name: 'Home' }) } catch (e) { console.warn('[logout] router.push failed', e) }
-    }
-
     // small initialization: preload public urls for existing orders
     async function preloadPublicUrls(list) {
       for (const o of list) {
@@ -581,7 +701,6 @@ export default {
     return {
       orders,
       loading,
-      isAdmin,
       goToDetail,
       trackOrder,
       handleCreate,
@@ -598,7 +717,16 @@ export default {
       unitPriceForModel,
       totalPrice,
       formatNumber,
-      logout
+      // Model management
+      newModel,
+      customField,
+      availableSizeFields,
+      modelMessage,
+      modelMessageType,
+      addCustomField,
+      removeField,
+      resetModelForm,
+      handleCreateModel
     }
   }
 }
