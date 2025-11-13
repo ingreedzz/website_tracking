@@ -1483,55 +1483,106 @@ router.put('/server/orders/:id/status', verifyToken, requireAdmin, async (req, r
 // Get all models (with size_fields if column exists)
 router.get('/models', async (req, res) => {
   const requestId = req.id || 'unknown';
-  console.log(`[REQ:${requestId}] [MODELS] === Fetching models ===`);
+  console.log(`[REQ:${requestId}] [MODELS-GET] ========================================`);
+  console.log(`[REQ:${requestId}] [MODELS-GET] === Fetching all models ===`);
+  console.log(`[REQ:${requestId}] [MODELS-GET] Timestamp:`, new Date().toISOString());
   
   try {
+    // Step 1: Validate configuration
+    console.log(`[REQ:${requestId}] [MODELS-GET] Step 1: Validating configuration`);
     if (!REST_BASE) {
-      console.error(`[REQ:${requestId}] [MODELS] REST_BASE not configured`);
+      console.error(`[REQ:${requestId}] [MODELS-GET] ❌ REST_BASE not configured`);
+      console.error(`[REQ:${requestId}] [MODELS-GET] SUPABASE_URL:`, !!SUPABASE_URL);
       return res.status(500).json({ 
         error: 'Database configuration missing',
         code: 'DB_NOT_CONFIGURED'
       });
     }
+    console.log(`[REQ:${requestId}] [MODELS-GET] ✓ Configuration validated`);
+    console.log(`[REQ:${requestId}] [MODELS-GET] REST_BASE:`, REST_BASE);
     
-    // Try to fetch models with size_fields
-    // If size_fields column doesn't exist, it will be null/undefined
-    console.log(`[REQ:${requestId}] [MODELS] Fetching from database...`);
-    const modelsResp = await axios.get(`${REST_BASE}/models?select=models_id,name,description,size_fields`, {
+    // Step 2: Fetch models from database
+    console.log(`[REQ:${requestId}] [MODELS-GET] Step 2: Fetching models from database`);
+    const fetchUrl = `${REST_BASE}/models?select=models_id,name,description,size_fields`;
+    console.log(`[REQ:${requestId}] [MODELS-GET] Fetch URL:`, fetchUrl);
+    
+    const modelsResp = await axios.get(fetchUrl, {
       headers: SB_HEADERS,
       timeout: 10000
     });
     
     const models = modelsResp.data || [];
-    console.log(`[REQ:${requestId}] [MODELS] ✓ Retrieved ${models.length} models`);
+    console.log(`[REQ:${requestId}] [MODELS-GET] ✓ Retrieved ${models.length} models from database`);
     
-    // Normalize models - ensure size_fields is always an array
-    const normalizedModels = models.map(m => ({
-      id: m.models_id,
-      models_id: m.models_id,
-      name: m.name || 'Unknown Model',
-      description: m.description || '',
-      size_fields: Array.isArray(m.size_fields) ? m.size_fields : []
-    }));
+    // Step 3: Log each model in detail
+    if (models.length > 0) {
+      console.log(`[REQ:${requestId}] [MODELS-GET] Step 3: Processing models...`);
+      models.forEach((m, idx) => {
+        console.log(`[REQ:${requestId}] [MODELS-GET]   Model ${idx + 1}:`, {
+          models_id: m.models_id,
+          name: m.name,
+          description: m.description ? `${m.description.substring(0, 50)}...` : '(none)',
+          size_fields_count: Array.isArray(m.size_fields) ? m.size_fields.length : 0,
+          size_fields_type: typeof m.size_fields
+        });
+        if (Array.isArray(m.size_fields) && m.size_fields.length > 0) {
+          console.log(`[REQ:${requestId}] [MODELS-GET]     Size fields:`, m.size_fields.map(f => f.key || f.name));
+        }
+      });
+    } else {
+      console.log(`[REQ:${requestId}] [MODELS-GET] Step 3: No models found in database`);
+    }
+    
+    // Step 4: Normalize models
+    console.log(`[REQ:${requestId}] [MODELS-GET] Step 4: Normalizing models`);
+    const normalizedModels = models.map((m, idx) => {
+      const normalized = {
+        id: m.models_id,
+        models_id: m.models_id,
+        name: m.name || 'Unknown Model',
+        description: m.description || '',
+        size_fields: Array.isArray(m.size_fields) ? m.size_fields : []
+      };
+      console.log(`[REQ:${requestId}] [MODELS-GET]   Normalized model ${idx + 1}:`, {
+        id: normalized.id,
+        name: normalized.name,
+        size_fields_count: normalized.size_fields.length
+      });
+      return normalized;
+    });
+    
+    console.log(`[REQ:${requestId}] [MODELS-GET] ✓ Normalized ${normalizedModels.length} models`);
+    console.log(`[REQ:${requestId}] [MODELS-GET] === Fetch complete - returning data ===`);
+    console.log(`[REQ:${requestId}] [MODELS-GET] ========================================`);
     
     res.json(normalizedModels);
   } catch (err) {
-    console.error(`[REQ:${requestId}] [MODELS] Error:`, err.message);
+    console.error(`[REQ:${requestId}] [MODELS-GET] ❌ Error occurred:`, err.message);
+    console.error(`[REQ:${requestId}] [MODELS-GET] Error name:`, err.name);
+    console.error(`[REQ:${requestId}] [MODELS-GET] Error stack:`, err.stack);
     
     // If the error is about column not existing, return empty size_fields
     if (err.response && err.response.data && err.response.data.message) {
       const errMsg = err.response.data.message;
+      console.error(`[REQ:${requestId}] [MODELS-GET] Database error message:`, errMsg);
+      
       if (errMsg.includes('column') && errMsg.includes('size_fields')) {
-        console.warn(`[REQ:${requestId}] [MODELS] size_fields column doesn't exist, falling back`);
+        console.warn(`[REQ:${requestId}] [MODELS-GET] ⚠️  size_fields column doesn't exist`);
+        console.warn(`[REQ:${requestId}] [MODELS-GET] Attempting fallback query without size_fields...`);
         
         // Fetch without size_fields column
         try {
-          const fallbackResp = await axios.get(`${REST_BASE}/models?select=models_id,name,description`, {
+          const fallbackUrl = `${REST_BASE}/models?select=models_id,name,description`;
+          console.log(`[REQ:${requestId}] [MODELS-GET] Fallback URL:`, fallbackUrl);
+          
+          const fallbackResp = await axios.get(fallbackUrl, {
             headers: SB_HEADERS,
             timeout: 10000
           });
           
           const models = fallbackResp.data || [];
+          console.log(`[REQ:${requestId}] [MODELS-GET] ✓ Fallback retrieved ${models.length} models`);
+          
           const normalizedModels = models.map(m => ({
             id: m.models_id,
             models_id: m.models_id,
@@ -1540,13 +1591,17 @@ router.get('/models', async (req, res) => {
             size_fields: [] // Empty array when column doesn't exist
           }));
           
+          console.log(`[REQ:${requestId}] [MODELS-GET] ✓ Fallback successful`);
+          console.log(`[REQ:${requestId}] [MODELS-GET] ========================================`);
           return res.json(normalizedModels);
         } catch (fallbackErr) {
-          console.error(`[REQ:${requestId}] [MODELS] Fallback also failed:`, fallbackErr.message);
+          console.error(`[REQ:${requestId}] [MODELS-GET] ❌ Fallback also failed:`, fallbackErr.message);
         }
       }
     }
     
+    console.error(`[REQ:${requestId}] [MODELS-GET] === Fetch failed ===`);
+    console.error(`[REQ:${requestId}] [MODELS-GET] ========================================`);
     res.status(500).json({ 
       error: 'Failed to fetch models',
       details: err.message,
@@ -1558,38 +1613,143 @@ router.get('/models', async (req, res) => {
 // Create a new model (admin only)
 router.post('/models', verifyToken, requireAdmin, async (req, res) => {
   const requestId = req.id || 'unknown';
-  console.log(`[REQ:${requestId}] [MODELS] === Create model ===`);
+  const userId = req.user?.users_id;
+  const userRole = req.user?.role;
+  
+  console.log(`[REQ:${requestId}] [MODELS-CREATE] ========================================`);
+  console.log(`[REQ:${requestId}] [MODELS-CREATE] === Creating new model ===`);
+  console.log(`[REQ:${requestId}] [MODELS-CREATE] Timestamp:`, new Date().toISOString());
+  console.log(`[REQ:${requestId}] [MODELS-CREATE] Admin user:`, { users_id: userId, role: userRole });
+  
   try {
+    // Step 1: Extract and validate input
+    console.log(`[REQ:${requestId}] [MODELS-CREATE] Step 1: Extracting request data`);
     const { name, description, size_fields } = req.body;
-    if (!name) return res.status(400).json({ error: 'name required' });
+    console.log(`[REQ:${requestId}] [MODELS-CREATE] Input data:`, {
+      name: name || '(missing)',
+      description: description ? `${description.substring(0, 50)}...` : '(none)',
+      size_fields_provided: !!size_fields,
+      size_fields_type: typeof size_fields,
+      size_fields_is_array: Array.isArray(size_fields),
+      size_fields_length: Array.isArray(size_fields) ? size_fields.length : 'N/A'
+    });
+    
+    if (!name || !name.trim()) {
+      console.error(`[REQ:${requestId}] [MODELS-CREATE] ❌ Model name is required`);
+      return res.status(400).json({ error: 'Model name is required' });
+    }
+    console.log(`[REQ:${requestId}] [MODELS-CREATE] ✓ Input validation passed`);
 
-    // Ensure size_fields is an array when provided
+    // Step 2: Process size_fields
+    console.log(`[REQ:${requestId}] [MODELS-CREATE] Step 2: Processing size_fields`);
     const sf = Array.isArray(size_fields) ? size_fields : (size_fields ? size_fields : null);
+    
+    if (sf && Array.isArray(sf)) {
+      console.log(`[REQ:${requestId}] [MODELS-CREATE] Size fields provided:`, sf.length);
+      sf.forEach((field, idx) => {
+        console.log(`[REQ:${requestId}] [MODELS-CREATE]   Field ${idx + 1}:`, {
+          key: field.key || '(missing)',
+          label: field.label || '(missing)',
+          type: field.type || '(missing)',
+          unit: field.unit || '(none)'
+        });
+      });
+    } else {
+      console.log(`[REQ:${requestId}] [MODELS-CREATE] No size fields provided (or invalid format)`);
+    }
 
-    // Try inserting; if size_fields column doesn't exist, retry without it
+    // Step 3: Prepare insert object
+    console.log(`[REQ:${requestId}] [MODELS-CREATE] Step 3: Preparing insert object`);
+    const insertObj = { 
+      name: name.trim(), 
+      description: description ? description.trim() : null 
+    };
+    if (sf) {
+      insertObj.size_fields = sf;
+      console.log(`[REQ:${requestId}] [MODELS-CREATE] Including size_fields in insert:`, sf.length, 'fields');
+    } else {
+      console.log(`[REQ:${requestId}] [MODELS-CREATE] No size_fields to include in insert`);
+    }
+    console.log(`[REQ:${requestId}] [MODELS-CREATE] Insert object prepared:`, {
+      name: insertObj.name,
+      has_description: !!insertObj.description,
+      has_size_fields: !!insertObj.size_fields
+    });
+
+    // Step 4: Insert into database
+    console.log(`[REQ:${requestId}] [MODELS-CREATE] Step 4: Inserting into database`);
     try {
-      const insertObj = { name, description: description || null };
-      if (sf) insertObj.size_fields = sf;
-
+      console.log(`[REQ:${requestId}] [MODELS-CREATE] Calling supabase.from('models').insert()...`);
       const { data, error } = await supabase.from('models').insert([insertObj]).select().maybeSingle();
+      
       if (error) {
+        console.error(`[REQ:${requestId}] [MODELS-CREATE] ❌ Database insert error:`, {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        });
+        
         // detect missing column and retry without size_fields
         const msg = (error && error.message) || '';
         if (msg.includes('column') && msg.includes('size_fields') && sf) {
-          console.warn(`[REQ:${requestId}] [MODELS] size_fields column missing, retrying without it`);
-          const { data: d2, error: e2 } = await supabase.from('models').insert([{ name, description: description || null }]).select().maybeSingle();
-          if (e2) return res.status(500).json({ error: e2.message || e2 });
+          console.warn(`[REQ:${requestId}] [MODELS-CREATE] ⚠️  size_fields column doesn't exist in database`);
+          console.warn(`[REQ:${requestId}] [MODELS-CREATE] Retrying insert without size_fields...`);
+          
+          const retryObj = { name: name.trim(), description: description ? description.trim() : null };
+          console.log(`[REQ:${requestId}] [MODELS-CREATE] Retry insert object:`, retryObj);
+          
+          const { data: d2, error: e2 } = await supabase.from('models').insert([retryObj]).select().maybeSingle();
+          
+          if (e2) {
+            console.error(`[REQ:${requestId}] [MODELS-CREATE] ❌ Retry also failed:`, {
+              message: e2.message,
+              details: e2.details,
+              hint: e2.hint
+            });
+            return res.status(500).json({ error: e2.message || e2 });
+          }
+          
+          console.log(`[REQ:${requestId}] [MODELS-CREATE] ✓ Retry successful (without size_fields)`);
+          console.log(`[REQ:${requestId}] [MODELS-CREATE] Created model:`, {
+            models_id: d2?.models_id,
+            name: d2?.name
+          });
+          console.log(`[REQ:${requestId}] [MODELS-CREATE] === Model created (fallback) ===`);
+          console.log(`[REQ:${requestId}] [MODELS-CREATE] ========================================`);
           return res.status(201).json(d2);
         }
+        
+        console.error(`[REQ:${requestId}] [MODELS-CREATE] === Creation failed ===`);
+        console.error(`[REQ:${requestId}] [MODELS-CREATE] ========================================`);
         return res.status(500).json({ error: error.message || error });
       }
+      
+      console.log(`[REQ:${requestId}] [MODELS-CREATE] ✓ Database insert successful`);
+      console.log(`[REQ:${requestId}] [MODELS-CREATE] Created model:`, {
+        models_id: data?.models_id,
+        name: data?.name,
+        description: data?.description,
+        size_fields_count: Array.isArray(data?.size_fields) ? data.size_fields.length : 0
+      });
+      console.log(`[REQ:${requestId}] [MODELS-CREATE] === Model created successfully ===`);
+      console.log(`[REQ:${requestId}] [MODELS-CREATE] ========================================`);
+      
       return res.status(201).json(data);
     } catch (err) {
-      console.error(`[REQ:${requestId}] [MODELS] Insert failed:`, err.message || err);
+      console.error(`[REQ:${requestId}] [MODELS-CREATE] ❌ Insert exception:`, err.message || err);
+      console.error(`[REQ:${requestId}] [MODELS-CREATE] Error name:`, err.name);
+      console.error(`[REQ:${requestId}] [MODELS-CREATE] Error stack:`, err.stack);
+      console.error(`[REQ:${requestId}] [MODELS-CREATE] === Creation failed ===`);
+      console.error(`[REQ:${requestId}] [MODELS-CREATE] ========================================`);
       return res.status(500).json({ error: err.message || String(err) });
     }
   } catch (err) {
-    console.error(`[REQ:${requestId}] [MODELS] Unexpected error:`, err.message || err);
+    console.error(`[REQ:${requestId}] [MODELS-CREATE] ❌ Unexpected error:`, err.message || err);
+    console.error(`[REQ:${requestId}] [MODELS-CREATE] Error name:`, err.name);
+    console.error(`[REQ:${requestId}] [MODELS-CREATE] Error stack:`, err.stack);
+    console.error(`[REQ:${requestId}] [MODELS-CREATE] === Creation failed ===`);
+    console.error(`[REQ:${requestId}] [MODELS-CREATE] ========================================`);
     return res.status(500).json({ error: err.message || String(err) });
   }
 });

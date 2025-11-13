@@ -214,29 +214,62 @@ export default {
 
     // Load models from backend
     async function loadModels() {
+      console.log('[Dashboard] ========================================');
       console.log('[Dashboard] === Loading models from backend ===');
+      console.log('[Dashboard] Timestamp:', new Date().toISOString());
+      
       try {
+        // Step 1: Fetch models from API
+        console.log('[Dashboard] Step 1: Calling GET /models API');
         const models = await apiGet('/models');
-        console.log('[Dashboard] Models loaded:', models.length);
         
+        console.log('[Dashboard] ✓ API response received');
+        console.log('[Dashboard] Models count:', models ? models.length : 0);
+        console.log('[Dashboard] Models type:', typeof models);
+        console.log('[Dashboard] Is array:', Array.isArray(models));
+        
+        // Step 2: Process models
         if (models && models.length > 0) {
+          console.log('[Dashboard] Step 2: Processing models...');
+          
           // Convert backend models to frontend format
-          modelOptions.value = models.map(m => {
+          modelOptions.value = models.map((m, idx) => {
+            console.log(`[Dashboard] Processing model ${idx + 1}:`, {
+              models_id: m.models_id,
+              name: m.name,
+              has_size_fields: !!(m.size_fields && Array.isArray(m.size_fields)),
+              size_fields_count: Array.isArray(m.size_fields) ? m.size_fields.length : 0
+            });
+            
             // If model has size_fields from DB, use them
             if (m.size_fields && Array.isArray(m.size_fields) && m.size_fields.length > 0) {
+              console.log(`[Dashboard] Model ${idx + 1} has dynamic size_fields from database:`, m.size_fields.length);
+              
+              const fields = m.size_fields.map(f => ({
+                key: f.key || f.name || '',
+                label: f.label || f.name || '',
+                type: f.type || 'text',
+                unit: f.unit || ''
+              }));
+              
+              console.log(`[Dashboard] Converted fields for model ${idx + 1}:`, fields.map(f => f.key));
+              
               return {
                 key: m.name || m.models_id,
                 label: m.name || 'Unknown Model',
-                fields: m.size_fields.map(f => ({
-                  key: f.key || f.name || '',
-                  label: f.label || f.name || '',
-                  type: f.type || 'text',
-                  unit: f.unit || ''
-                }))
+                fields: fields
               };
             } else {
               // No size_fields, try to match with fallback
+              console.log(`[Dashboard] Model ${idx + 1} has no size_fields, checking fallback...`);
               const fallback = fallbackModelOptions.find(fm => fm.key === m.name || fm.label === m.name);
+              
+              if (fallback) {
+                console.log(`[Dashboard] ✓ Found fallback match for "${m.name}":`, fallback.fields.length, 'fields');
+              } else {
+                console.log(`[Dashboard] ⚠️  No fallback match for "${m.name}", using empty fields`);
+              }
+              
               return {
                 key: m.name || m.models_id,
                 label: m.name || 'Unknown Model',
@@ -245,25 +278,74 @@ export default {
             }
           });
           
-          console.log('[Dashboard] Models converted:', modelOptions.value.length);
+          console.log('[Dashboard] ✓ Models converted:', modelOptions.value.length);
+          console.log('[Dashboard] Model keys:', modelOptions.value.map(m => m.key));
+          console.log('[Dashboard] Models with dynamic fields:', modelOptions.value.filter(m => m.fields.length > 0).length);
         } else {
-          console.warn('[Dashboard] No models from backend, using fallback');
+          console.warn('[Dashboard] ⚠️  No models returned from backend');
+          console.warn('[Dashboard] Using fallback hardcoded models');
           modelOptions.value = fallbackModelOptions;
+          console.log('[Dashboard] Fallback models count:', modelOptions.value.length);
         }
+        
+        // Step 3: Initialize form.model
+        console.log('[Dashboard] Step 3: Initializing form.model');
+        if (!form.model && modelOptions.value.length > 0) {
+          form.model = modelOptions.value[0].key;
+          console.log('[Dashboard] ✓ Set initial model to:', form.model);
+        } else if (form.model) {
+          console.log('[Dashboard] form.model already set to:', form.model);
+        } else {
+          console.error('[Dashboard] ❌ No models available to initialize');
+        }
+        
+        console.log('[Dashboard] === Models loaded successfully ===');
+        console.log('[Dashboard] Summary:');
+        console.log('[Dashboard]   Total models:', modelOptions.value.length);
+        console.log('[Dashboard]   Using dynamic size_fields:', modelOptions.value.filter(m => m.fields.length > 0).length);
+        console.log('[Dashboard]   Current selected model:', form.model);
+        console.log('[Dashboard] ========================================');
       } catch (err) {
-        console.error('[Dashboard] Failed to load models, using fallback:', err.message);
+        console.error('[Dashboard] ========================================');
+        console.error('[Dashboard] ❌ Failed to load models from backend');
+        console.error('[Dashboard] Error name:', err.name);
+        console.error('[Dashboard] Error message:', err.message);
+        console.error('[Dashboard] Error stack:', err.stack);
+        console.error('[Dashboard] Full error:', err);
+        console.error('[Dashboard] Using fallback hardcoded models');
+        
         modelOptions.value = fallbackModelOptions;
+        
+        console.error('[Dashboard] Fallback models count:', modelOptions.value.length);
+        console.error('[Dashboard] === Model loading failed (using fallback) ===');
+        console.error('[Dashboard] ========================================');
       }
       
       // Ensure form.model is initialized to a valid model
       if (!form.model && modelOptions.value.length > 0) {
         form.model = modelOptions.value[0].key;
+        console.log('[Dashboard] Final fallback: Set model to:', form.model);
       }
     }
 
     function getFieldsForModel(key) {
-      const m = modelOptions.value.find(x => x.key === key)
-      return m ? m.fields : []
+      console.log('[Dashboard] getFieldsForModel called for:', key);
+      const m = modelOptions.value.find(x => x.key === key);
+      
+      if (m) {
+        console.log('[Dashboard] ✓ Found model:', m.label);
+        console.log('[Dashboard] Fields count:', m.fields ? m.fields.length : 0);
+        if (m.fields && m.fields.length > 0) {
+          console.log('[Dashboard] Field keys:', m.fields.map(f => f.key));
+        } else {
+          console.log('[Dashboard] ⚠️  No fields for this model');
+        }
+        return m.fields || [];
+      } else {
+        console.warn('[Dashboard] ⚠️  Model not found:', key);
+        console.warn('[Dashboard] Available models:', modelOptions.value.map(x => x.key));
+        return [];
+      }
     }
 
     async function load() {

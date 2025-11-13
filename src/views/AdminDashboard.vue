@@ -180,69 +180,160 @@ function refresh() {
 }
 
 function toggleCreateModel() {
+  console.log('[AdminDashboard] ========================================');
+  console.log('[AdminDashboard] toggleCreateModel called');
+  console.log('[AdminDashboard] Current state:', showCreateModel.value);
+  
   showCreateModel.value = !showCreateModel.value
   modelCreateMsg.value = ''
+  
+  console.log('[AdminDashboard] New state:', showCreateModel.value);
+  
   // Reset form when opening
   if (showCreateModel.value) {
+    console.log('[AdminDashboard] Resetting form (opening model creator)');
     newModel.value = { name: '', description: '', size_fields: [] }
+    console.log('[AdminDashboard] Form reset complete');
+  } else {
+    console.log('[AdminDashboard] Closing model creator');
   }
+  console.log('[AdminDashboard] ========================================');
 }
 
 function addSizeField() {
-  newModel.value.size_fields.push({
+  console.log('[AdminDashboard] ========================================');
+  console.log('[AdminDashboard] addSizeField called');
+  console.log('[AdminDashboard] Current size_fields count:', newModel.value.size_fields.length);
+  
+  const newField = {
     key: '',
     label: '',
     type: 'number',
     unit: 'cm'
-  })
+  };
+  
+  newModel.value.size_fields.push(newField);
+  
+  console.log('[AdminDashboard] New size_fields count:', newModel.value.size_fields.length);
+  console.log('[AdminDashboard] Added field:', newField);
+  console.log('[AdminDashboard] ========================================');
 }
 
 function removeSizeField(index) {
-  newModel.value.size_fields.splice(index, 1)
+  console.log('[AdminDashboard] ========================================');
+  console.log('[AdminDashboard] removeSizeField called');
+  console.log('[AdminDashboard] Removing field at index:', index);
+  console.log('[AdminDashboard] Current size_fields count:', newModel.value.size_fields.length);
+  
+  if (index >= 0 && index < newModel.value.size_fields.length) {
+    const removed = newModel.value.size_fields[index];
+    console.log('[AdminDashboard] Field being removed:', removed);
+    newModel.value.size_fields.splice(index, 1);
+    console.log('[AdminDashboard] ✓ Field removed successfully');
+  } else {
+    console.error('[AdminDashboard] ❌ Invalid index:', index);
+  }
+  
+  console.log('[AdminDashboard] New size_fields count:', newModel.value.size_fields.length);
+  console.log('[AdminDashboard] ========================================');
 }
 
 async function createModel() {
-  console.log('[AdminDashboard] Creating model...', newModel.value)
+  console.log('[AdminDashboard] ========================================');
+  console.log('[AdminDashboard] === Creating new model ===');
+  console.log('[AdminDashboard] Timestamp:', new Date().toISOString());
+  console.log('[AdminDashboard] Current model data:', JSON.stringify(newModel.value, null, 2));
+  
   try {
+    // Step 1: Validate model name
+    console.log('[AdminDashboard] Step 1: Validating model name');
     if (!newModel.value.name || !newModel.value.name.trim()) {
+      console.error('[AdminDashboard] ❌ Model name is required');
       modelCreateMsg.value = 'Model name is required'
       return
     }
+    console.log('[AdminDashboard] ✓ Model name valid:', newModel.value.name);
 
-    // Validate size fields
-    const sizeFields = newModel.value.size_fields.filter(f => f.key && f.label)
+    // Step 2: Validate and filter size fields
+    console.log('[AdminDashboard] Step 2: Validating size fields');
+    console.log('[AdminDashboard] Total size fields:', newModel.value.size_fields.length);
+    
+    const sizeFields = newModel.value.size_fields.filter(f => {
+      const isValid = !!(f.key && f.label);
+      console.log('[AdminDashboard] Field validation:', {
+        key: f.key || '(empty)',
+        label: f.label || '(empty)',
+        type: f.type,
+        unit: f.unit,
+        isValid
+      });
+      return isValid;
+    });
+    
+    console.log('[AdminDashboard] Valid size fields:', sizeFields.length);
     
     // Warn if some fields are incomplete
     if (sizeFields.length < newModel.value.size_fields.length) {
-      const incomplete = newModel.value.size_fields.length - sizeFields.length
-      console.warn(`[AdminDashboard] ${incomplete} incomplete fields removed`)
+      const incomplete = newModel.value.size_fields.length - sizeFields.length;
+      console.warn(`[AdminDashboard] ⚠️  ${incomplete} incomplete fields will be removed`);
     }
 
+    // Step 3: Prepare payload
+    console.log('[AdminDashboard] Step 3: Preparing API payload');
     const payload = { 
       name: newModel.value.name.trim(), 
       description: newModel.value.description.trim() || null
-    }
+    };
     
     // Only include size_fields if there are valid fields
     if (sizeFields.length > 0) {
-      payload.size_fields = sizeFields
+      payload.size_fields = sizeFields;
+      console.log('[AdminDashboard] Including size_fields in payload:', sizeFields.length);
+    } else {
+      console.log('[AdminDashboard] No valid size_fields to include');
     }
+    
+    console.log('[AdminDashboard] Payload prepared:', JSON.stringify(payload, null, 2));
 
-    const created = await apiPost('/models', payload)
-    console.log('[AdminDashboard] Model created:', created)
-    modelCreateMsg.value = `Model "${newModel.value.name}" created successfully with ${sizeFields.length} size fields!`
+    // Step 4: Send API request
+    console.log('[AdminDashboard] Step 4: Sending POST /models request');
+    const created = await apiPost('/models', payload);
     
-    // Reset form after 2 seconds and close
+    console.log('[AdminDashboard] ✓ Model created successfully!');
+    console.log('[AdminDashboard] Created model:', JSON.stringify(created, null, 2));
+    
+    // Step 5: Update UI
+    console.log('[AdminDashboard] Step 5: Updating UI');
+    modelCreateMsg.value = `✓ Model "${newModel.value.name}" created successfully with ${sizeFields.length} size fields!`;
+    console.log('[AdminDashboard] Success message set:', modelCreateMsg.value);
+    
+    // Step 6: Auto-close and refresh
+    console.log('[AdminDashboard] Step 6: Scheduling auto-close (2 seconds)');
     setTimeout(() => {
-      newModel.value = { name: '', description: '', size_fields: [] }
-      showCreateModel.value = false
-      modelCreateMsg.value = ''
-    }, 2000)
+      console.log('[AdminDashboard] Auto-close timeout triggered');
+      newModel.value = { name: '', description: '', size_fields: [] };
+      showCreateModel.value = false;
+      modelCreateMsg.value = '';
+      console.log('[AdminDashboard] Form reset and closed');
+    }, 2000);
     
-    fetchOrders()
+    console.log('[AdminDashboard] Step 7: Refreshing orders list');
+    fetchOrders();
+    
+    console.log('[AdminDashboard] === Model creation complete ===');
+    console.log('[AdminDashboard] ========================================');
   } catch (err) {
-    console.error('[AdminDashboard] createModel failed', err)
-    modelCreateMsg.value = 'Failed to create model: ' + (err.message || err)
+    console.error('[AdminDashboard] ========================================');
+    console.error('[AdminDashboard] ❌ Model creation failed');
+    console.error('[AdminDashboard] Error name:', err.name);
+    console.error('[AdminDashboard] Error message:', err.message);
+    console.error('[AdminDashboard] Error stack:', err.stack);
+    console.error('[AdminDashboard] Full error:', err);
+    
+    modelCreateMsg.value = '❌ Failed to create model: ' + (err.message || err);
+    console.error('[AdminDashboard] Error message set:', modelCreateMsg.value);
+    console.error('[AdminDashboard] === Model creation failed ===');
+    console.error('[AdminDashboard] ========================================');
   }
 }
 
