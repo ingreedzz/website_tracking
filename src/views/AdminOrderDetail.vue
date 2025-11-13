@@ -227,9 +227,11 @@ async function markPaymentInvalid() {
 onMounted(() => {
   console.log('[AdminOrderDetail] Component mounted');
   const user = getCurrentUser()
-  console.log('[AdminOrderDetail] Current user:', user ? { users_id: user.users_id, role: user.role } : null);
+  console.log('[AdminOrderDetail] Current user:', user ? { users_id: user.users_id, is_admin: user.is_admin } : null);
   
-  if (!user || user.role !== 'admin') {
+  // Check is_admin field instead of role column (which is being removed)
+  const isAdmin = user?.is_admin || user?.role === 'admin'
+  if (!user || !isAdmin) {
     console.log('[AdminOrderDetail] User is not admin, redirecting to home');
     router.push({ name: 'Home' }).catch(() => {})
     return
