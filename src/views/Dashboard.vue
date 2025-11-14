@@ -594,8 +594,8 @@ export default {
       console.log('[Dashboard] User is_admin:', isAdmin.value);
 
       try {
-        // Use different endpoint based on role
-        const endpoint = isAdmin.value ? '/orders' : '/user/orders';
+        // Allow all authenticated users to fetch all orders (no gatekeeping)
+        const endpoint = '/orders';
         console.log('[Dashboard] Fetching orders from', endpoint);
         
         // Use API helper for authenticated request

@@ -35,6 +35,50 @@
         <div class="mt-4">
           <router-link class="px-4 py-2 bg-gray-200 rounded" to="/payment">Back to payments</router-link>
         </div>
+
+        <!-- Status update form (available to any authenticated user) -->
+        <div class="mt-6 p-4 border rounded bg-gray-50">
+          <h3 class="font-semibold mb-2">Update Order Status</h3>
+          <div class="mb-2">
+            <label class="block text-sm font-medium">New status</label>
+            <select v-model="newStatus" class="mt-1 block w-full border rounded p-2">
+              <option value="created">created</option>
+              <option value="confirmed">confirmed</option>
+              <option value="printing">printing</option>
+              <option value="shipped">shipped</option>
+              <option value="delivered">delivered</option>
+              <option value="cancelled">cancelled</option>
+            </select>
+          </div>
+
+          <div class="mb-2">
+            <label class="block text-sm font-medium">Payment status (optional)</label>
+            <select v-model="newPaymentStatus" class="mt-1 block w-full border rounded p-2">
+              <option value="">(no change)</option>
+              <option value="pending">pending</option>
+              <option value="completed">completed</option>
+              <option value="failed">failed</option>
+              <option value="refunded">refunded</option>
+            </select>
+          </div>
+
+          <div class="mb-2">
+            <label class="block text-sm font-medium">Note (optional)</label>
+            <input v-model="note" class="mt-1 block w-full border rounded p-2" type="text" />
+          </div>
+
+          <div class="mb-4">
+            <label class="inline-flex items-center">
+              <input type="checkbox" v-model="force" class="mr-2" />
+              <span class="text-sm">Force transition (skip validation)</span>
+            </label>
+          </div>
+
+          <div>
+            <button @click="submitStatus" class="px-4 py-2 bg-blue-600 text-white rounded">Update Status</button>
+            <button @click="reloadOrder" class="ml-2 px-3 py-2 bg-gray-200 rounded">Reload</button>
+          </div>
+        </div>
       </div>
     </div>
   </section>
@@ -43,7 +87,7 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { apiGet } from '../lib/api'
+import { apiGet, apiPut } from '../lib/api'
 
 const route = useRoute()
 const id = route.params.id
@@ -138,4 +182,39 @@ async function loadOrder() {
 }
 
 onMounted(() => loadOrder())
+
+// status update state
+const newStatus = ref('')
+const newPaymentStatus = ref('')
+const note = ref('')
+const force = ref(false)
+
+async function submitStatus() {
+  try {
+    if (!newStatus.value) return alert('Please select a new status')
+    const payload = {
+      status: newStatus.value,
+      note: note.value || null,
+      expected_current_status: order.value?.status || null,
+      force: !!force.value
+    }
+    if (newPaymentStatus.value) payload.payment_status = newPaymentStatus.value
+    // call API helper
+    await apiPut(`/server/orders/${id}/status`, payload)
+    alert('Order status updated')
+    await loadOrder()
+    // reset inputs
+    newStatus.value = ''
+    newPaymentStatus.value = ''
+    note.value = ''
+    force.value = false
+  } catch (e) {
+    console.error('[orderDetail] submitStatus error', e)
+    alert('Failed to update status: ' + (e.message || e))
+  }
+}
+
+async function reloadOrder() {
+  await loadOrder()
+}
 </script>

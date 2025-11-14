@@ -671,21 +671,11 @@ router.get('/orders/:id', verifyToken, async (req, res) => {
       return res.status(404).json({ error: 'Order not found' });
     }
     
-    // Ownership check: users can only access their own orders unless admin
+    // Previously there was an ownership check here that prevented non-admin
+    // users from reading order details. For this build all authenticated
+    // users are allowed to view orders, so no ownership gating is applied.
     const order = rows[0];
-    console.log('[GET /orders/:id] Order user_id:', order.user_id);
-    const isAdmin = requestUserIsAdmin;
-    console.log('[GET /orders/:id] Access check:', { 
-      isAdmin: isAdmin,
-      orderUserId: order.user_id,
-      requestUserId: requestUserId,
-      match: order.user_id === requestUserId
-    });
-    
-    if (!isAdmin && order.user_id !== requestUserId) {
-      console.log('[GET /orders/:id] Access denied');
-      return res.status(403).json({ error: 'Access denied' });
-    }
+    console.log('[GET /orders/:id] Returning order for authenticated user:', { orderUserId: order.user_id, requestUserId });
     
     // Normalize response: add 'id' field and flatten order_items data
     const firstItem = order.order_items && order.order_items.length > 0 ? order.order_items[0] : null;
