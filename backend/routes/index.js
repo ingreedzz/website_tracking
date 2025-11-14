@@ -1515,31 +1515,129 @@ router.post('/server/orders/:id/payment', verifyToken, upload.single('file'), as
   }
 });
 
-// Update order status and record history (admin only)
+// Allowed status transitions map
+// Each status can transition to specific statuses, or use 'any' for transitions allowed from any status
+const ALLOWED_TRANSITIONS = {
+  created: ['confirmed', 'cancelled'],
+  confirmed: ['printing', 'cancelled'],
+  printing: ['shipped', 'cancelled'],
+  shipped: ['delivered'],
+  any: ['cancelled']  // cancelled can be reached from any status
+};
+
+// Update order status with validation, concurrency check, and audit logging (admin only)
 router.put('/server/orders/:id/status', verifyToken, requireAdmin, async (req, res) => {
+  const requestId = req.id || 'unknown';
+  
   try {
-  // User is already authenticated via middleware
-  const userId = req.user?.users_id || req.user?.user_id || null;
-
+    // User is already authenticated via middleware
+    const userId = req.user?.users_id || req.user?.user_id || null;
     const orderId = req.params.id;
-    const { status, note } = req.body;
-    if (!orderId || !status) return res.status(400).json({ error: 'order id and new status required' });
+    
+    // Parse body fields
+    const { status, note, payment_status, expected_current_status, force } = req.body;
+    
+    console.log(`[REQ:${requestId}] [ORDER-STATUS] Attempting status update`, { 
+      orderId, 
+      userId, 
+      newStatus: status,
+      paymentStatus: payment_status || 'not provided',
+      expectedCurrentStatus: expected_current_status || 'not provided',
+      force: force || false
+    });
 
-    // fetch current order
-    const { data: orderRow } = await supabase.from('orders').select('*').eq('orders_id', orderId).maybeSingle();
-    if (!orderRow) return res.status(404).json({ error: 'Order not found' });
-    const oldStatus = orderRow.status || null;
-
-    // update order (status and optional payment_status)
-    const updates = { status: status };
-    if (req.body && req.body.payment_status) updates.payment_status = req.body.payment_status;
-    const { data: updatedOrder, error: updErr } = await supabase.from('orders').update(updates).eq('orders_id', orderId).select().maybeSingle();
-    if (updErr) {
-      console.error('[ORDER STATUS] update error', updErr)
-      return res.status(500).json({ error: 'Failed to update order status' });
+    // Validate required fields
+    if (!orderId || !status) {
+      console.log(`[REQ:${requestId}] [ORDER-STATUS] Missing required fields`);
+      return res.status(400).json({ error: 'order id and new status required' });
     }
 
-    // insert status history
+    // Validate payment_status if provided
+    const ALLOWED_PAYMENT_STATUSES = ['pending', 'completed', 'failed', 'refunded'];
+    if (payment_status && !ALLOWED_PAYMENT_STATUSES.includes(payment_status)) {
+      console.log(`[REQ:${requestId}] [ORDER-STATUS] Invalid payment_status: ${payment_status}`);
+      return res.status(400).json({ 
+        error: `Invalid payment_status. Must be one of: ${ALLOWED_PAYMENT_STATUSES.join(', ')}` 
+      });
+    }
+
+    // Fetch current order
+    console.log(`[REQ:${requestId}] [ORDER-STATUS] Fetching order`, { orderId });
+    const { data: orderRow } = await supabase.from('orders').select('*').eq('orders_id', orderId).maybeSingle();
+    if (!orderRow) {
+      console.log(`[REQ:${requestId}] [ORDER-STATUS] Order not found`, { orderId });
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    
+    const oldStatus = orderRow.status || null;
+    console.log(`[REQ:${requestId}] [ORDER-STATUS] Current order status`, { oldStatus, newStatus: status });
+
+    // Optimistic concurrency check
+    if (expected_current_status && expected_current_status !== oldStatus) {
+      console.log(`[REQ:${requestId}] [ORDER-STATUS] Concurrency conflict`, { 
+        expected: expected_current_status, 
+        actual: oldStatus 
+      });
+      return res.status(409).json({ 
+        error: 'Order status changed concurrently',
+        current_status: oldStatus,
+        expected_status: expected_current_status
+      });
+    }
+
+    // Transition validation (unless force=true)
+    if (!force) {
+      // Check if transition is allowed
+      const isNoOp = oldStatus === status;
+      const isAllowedFromCurrent = ALLOWED_TRANSITIONS[oldStatus]?.includes(status);
+      const isAllowedFromAny = ALLOWED_TRANSITIONS.any?.includes(status);
+      
+      if (!isNoOp && !isAllowedFromCurrent && !isAllowedFromAny) {
+        console.log(`[REQ:${requestId}] [ORDER-STATUS] Invalid transition`, { 
+          from: oldStatus, 
+          to: status,
+          allowedFromCurrent: ALLOWED_TRANSITIONS[oldStatus] || [],
+          allowedFromAny: ALLOWED_TRANSITIONS.any || []
+        });
+        return res.status(400).json({ 
+          error: `Invalid status transition: ${oldStatus} -> ${status}`,
+          current_status: oldStatus,
+          requested_status: status,
+          allowed_transitions: ALLOWED_TRANSITIONS[oldStatus] || []
+        });
+      }
+      
+      if (isNoOp) {
+        console.log(`[REQ:${requestId}] [ORDER-STATUS] No-op transition (same status)`, { status });
+      } else {
+        console.log(`[REQ:${requestId}] [ORDER-STATUS] Valid transition`, { from: oldStatus, to: status });
+      }
+    } else {
+      console.log(`[REQ:${requestId}] [ORDER-STATUS] Force flag enabled - skipping transition validation`);
+    }
+
+    // Update order (status and optional payment_status)
+    const updates = { status: status };
+    if (payment_status) {
+      updates.payment_status = payment_status;
+      console.log(`[REQ:${requestId}] [ORDER-STATUS] Including payment_status update`, { payment_status });
+    }
+    
+    console.log(`[REQ:${requestId}] [ORDER-STATUS] Updating order`, { orderId, updates });
+    const { data: updatedOrder, error: updErr } = await supabase
+      .from('orders')
+      .update(updates)
+      .eq('orders_id', orderId)
+      .select()
+      .maybeSingle();
+      
+    if (updErr) {
+      console.error(`[REQ:${requestId}] [ORDER-STATUS] Update error`, updErr);
+      return res.status(500).json({ error: 'Failed to update order status' });
+    }
+    console.log(`[REQ:${requestId}] [ORDER-STATUS] Order updated successfully`);
+
+    // Insert status history
     const histObj = {
       order_id: orderId,
       old_status: oldStatus,
@@ -1547,21 +1645,40 @@ router.put('/server/orders/:id/status', verifyToken, requireAdmin, async (req, r
       changed_by: userId,
       note: note || null
     };
-    const { data: histIns, error: histErr } = await supabase.from('order_status_history').insert([histObj]).select().maybeSingle();
+    
+    console.log(`[REQ:${requestId}] [ORDER-STATUS] Inserting history record`, histObj);
+    const { data: histIns, error: histErr } = await supabase
+      .from('order_status_history')
+      .insert([histObj])
+      .select()
+      .maybeSingle();
+      
     if (histErr) {
-      console.warn('[ORDER STATUS] failed to insert history', histErr)
+      console.warn(`[REQ:${requestId}] [ORDER-STATUS] Failed to insert history`, histErr);
+    } else {
+      console.log(`[REQ:${requestId}] [ORDER-STATUS] History record inserted`, { historyId: histIns?.order_status_history_id });
     }
 
-    // if payment_status was provided and payments exist, try to update payments rows
-    try {
-      if (req.body && req.body.payment_status) {
-        await supabase.from('payments').update({ status: req.body.payment_status }).eq('order_id', orderId).catch(() => {});
+    // If payment_status was provided, try to update payments rows
+    if (payment_status) {
+      try {
+        console.log(`[REQ:${requestId}] [ORDER-STATUS] Updating payments table`, { orderId, payment_status });
+        await supabase.from('payments').update({ status: payment_status }).eq('order_id', orderId).catch(() => {});
+      } catch (_e) { 
+        console.warn(`[REQ:${requestId}] [ORDER-STATUS] Non-fatal: failed to update payments`, _e);
       }
-    } catch (_e) { /* non-fatal */ }
+    }
+
+    console.log(`[REQ:${requestId}] [ORDER-STATUS] Status update complete`, { 
+      orderId, 
+      oldStatus, 
+      newStatus: status,
+      historyRecorded: !!histIns
+    });
 
     return res.json({ order: updatedOrder, history: histIns || null });
   } catch (err) {
-    console.error('[server/orders/:id/status] handler error', err)
+    console.error(`[REQ:${requestId}] [ORDER-STATUS] Handler error`, err);
     return res.status(500).json({ error: err.message || String(err) });
   }
 });
