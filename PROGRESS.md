@@ -1,3 +1,79 @@
+### November 14, 2025 - Order Status History Feature Implementation
+
+**Summary:** Implemented the order status history feature per CODING_AGENT_PROMPT.md. The feature displays a timeline of order status changes in the OrderDetail page, showing who made changes, when, and what status transitions occurred.
+
+**Implementation:**
+
+1. **Backend Changes (backend/routes/index.js)**:
+   - Enhanced GET `/orders/:id` endpoint to fetch and attach `order_status_history` records
+   - Query selects all relevant fields: `order_status_history_id, order_id, old_status, new_status, changed_by, changed_by_id, changed_by_email, changed_by_name, note, customer_name, product, order_name, payment_status, created_at`
+   - Orders history by `created_at` descending (most recent first)
+   - Graceful error handling: sets `normalized.history = []` if table/columns missing
+   - Comprehensive debug logging with request ID correlation: `[REQ:xxx] [ORDERS/:id]`
+
+2. **Frontend Changes (src/views/OrderDetail.vue)**:
+   - Added debug log in `loadOrder()`: logs order ID and history count
+   - New "Order History" section in template (below status update form)
+   - Displays timeline of history entries with:
+     - Timestamp (formatted)
+     - Changed by (name/email/ID)
+     - Status transition (old → new)
+     - Optional note
+     - Optional payment status and product info
+   - Handles empty/missing history gracefully ("No history available")
+
+3. **Smoke Test (tmp/order_status_smoketest_history.js)**:
+   - Comprehensive end-to-end test (387 lines)
+   - Tests: register → login → create order → update status → verify history
+   - Validates history array exists and contains expected status change
+   - Provides helpful warnings if DB schema missing
+   - Proper exit codes: 0 for pass, non-zero for fail
+
+**Testing Results:**
+- ✅ Backend syntax validation: PASS
+- ✅ Frontend build: SUCCESS (333.22 kB, gzip: 99.03 kB)
+- ✅ Smoke test syntax validation: PASS
+- ✅ CodeQL security scan: 0 alerts
+- ✅ No breaking changes introduced
+
+**Safety Compliance:**
+- ✅ No destructive DB migrations executed
+- ✅ Graceful fallback if `order_status_history` table/columns missing
+- ✅ Backward compatible - all existing functionality preserved
+- ✅ Minimal changes - only files specified in prompt
+
+**Files Modified:**
+1. `backend/routes/index.js` (+22 lines) - History fetch logic
+2. `src/views/OrderDetail.vue` (+20 lines) - History display UI
+3. `tmp/order_status_smoketest_history.js` (NEW, 387 lines) - Comprehensive test
+4. `dist/index.html` (4 lines) - Build output reference
+
+**Database Note:**
+The feature works gracefully whether or not the `order_status_history` table exists:
+- If table exists: displays full history timeline
+- If table missing: displays "No history available" and logs warning
+- No error thrown, no functionality broken
+
+To enable full functionality, apply migration: `backend/database/migrations/20251114_add_order_status_history_fields.sql`
+
+**How to Test:**
+```bash
+# Run smoke test locally
+node tmp/order_status_smoketest_history.js http://localhost:3000
+
+# Run smoke test against production
+node tmp/order_status_smoketest_history.js https://website-tracking.onrender.com
+```
+
+**Next Steps:**
+1. Deploy backend to Render
+2. Deploy frontend to Vercel
+3. Apply DB migration if needed
+4. Run smoke test against production
+5. Verify history displays correctly in UI
+
+---
+
 ### November 14, 2025 - Update Order Status Feature Implementation (Minimal Changes)
 
 ### November 14, 2025 - DB Migration Applied: Extended order_status_history
