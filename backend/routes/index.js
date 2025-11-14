@@ -33,6 +33,17 @@ const SB_HEADERS = SUPABASE_KEY ? {
     'Prefer': 'return=minimal'
 } : {};
 
+// Allowed order status transitions map (minimal and editable)
+const ALLOWED_TRANSITIONS = {
+  created: ['confirmed', 'cancelled'],
+  confirmed: ['printing', 'cancelled'],
+  printing: ['shipped', 'cancelled'],
+  shipped: ['delivered'],
+  any: ['cancelled']
+};
+
+const PAYMENT_STATUSES = new Set(['pending', 'completed', 'failed', 'refunded']);
+
 // MySQL fallback removed — use Supabase only
 
 router.post('/register', async (req, res) => {
@@ -1515,15 +1526,7 @@ router.post('/server/orders/:id/payment', verifyToken, upload.single('file'), as
   }
 });
 
-// Allowed status transitions map
-// Each status can transition to specific statuses, or use 'any' for transitions allowed from any status
-const ALLOWED_TRANSITIONS = {
-  created: ['confirmed', 'cancelled'],
-  confirmed: ['printing', 'cancelled'],
-  printing: ['shipped', 'cancelled'],
-  shipped: ['delivered'],
-  any: ['cancelled']  // cancelled can be reached from any status
-};
+// Allowed status transitions map is defined at top-of-file (keep single source of truth)
 
 // Update order status with validation, concurrency check, and audit logging
 router.put('/server/orders/:id/status', verifyToken, async (req, res) => {
@@ -1552,12 +1555,11 @@ router.put('/server/orders/:id/status', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'order id and new status required' });
     }
 
-    // Validate payment_status if provided
-    const ALLOWED_PAYMENT_STATUSES = ['pending', 'completed', 'failed', 'refunded'];
-    if (payment_status && !ALLOWED_PAYMENT_STATUSES.includes(payment_status)) {
+    // Validate payment_status if provided (use top-level PAYMENT_STATUSES set)
+    if (payment_status && !(PAYMENT_STATUSES && PAYMENT_STATUSES.has && PAYMENT_STATUSES.has(payment_status))) {
       console.log(`[REQ:${requestId}] [ORDER-STATUS] Invalid payment_status: ${payment_status}`);
       return res.status(400).json({ 
-        error: `Invalid payment_status. Must be one of: ${ALLOWED_PAYMENT_STATUSES.join(', ')}` 
+        error: `Invalid payment_status. Must be one of: ${Array.from(PAYMENT_STATUSES || []).join(', ')}` 
       });
     }
 
