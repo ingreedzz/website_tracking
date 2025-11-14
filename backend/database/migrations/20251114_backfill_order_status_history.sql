@@ -10,7 +10,8 @@ UPDATE public.order_status_history osh
 SET changed_by_id = osh.changed_by::uuid
 WHERE osh.changed_by_id IS NULL
   AND osh.changed_by IS NOT NULL
-  AND osh.changed_by ~ '^[0-9a-fA-F\-]{36}$';
+  -- Cast to text before applying regex so this works if changed_by is uuid or text
+  AND osh.changed_by::text ~ '^[0-9a-fA-F-]{36}$';
 
 -- 2) Populate changed_by_email / changed_by_name from users where possible
 UPDATE public.order_status_history osh
