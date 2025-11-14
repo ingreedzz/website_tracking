@@ -105,35 +105,45 @@
     <!-- Manage Models -->
     <div v-if="viewMode === 'manageModels'" class="mb-6 bg-white border-2 border-gray-300 p-6 rounded-lg shadow-md">
       <h3 class="text-xl font-bold mb-4">Manage Models</h3>
-      
+
       <div v-if="modelOptions.length === 0" class="text-gray-500 italic">
         No models found. Create a model first.
       </div>
 
-      <div v-else class="space-y-4">
-        <div v-for="model in modelOptions" :key="model.models_id" class="border rounded-lg p-4 bg-gray-50">
-          <div v-if="editingModelId !== model.models_id" class="flex items-start justify-between">
-            <div class="flex-1">
-              <h4 class="font-bold text-lg">{{ model.name }}</h4>
-              <p class="text-sm text-gray-600 mt-1" v-if="model.description">{{ model.description }}</p>
-              <p class="text-sm text-gray-600 mt-1" v-if="model.unit_price">
-                <span class="font-semibold">Unit Price:</span> Rp {{ formatNumber(model.unit_price) }}
-              </p>
-              <p class="text-sm text-gray-600 mt-1" v-if="model.size_fields && model.size_fields.length > 0">
-                <span class="font-semibold">Size Fields:</span> {{ model.size_fields.map(f => f.label || f.key).join(', ') }}
-              </p>
-            </div>
-            <div class="flex space-x-2 ml-4">
-              <button @click="startEditModel(model)" class="px-3 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-600">
-                Edit
-              </button>
-              <button @click="deleteModel(model)" class="px-3 py-1 bg-red-500 text-white text-sm rounded hover:bg-red-600">
-                Delete
-              </button>
-            </div>
+      <div v-else class="grid grid-cols-2 gap-6">
+        <!-- Left: selector and info -->
+        <div class="space-y-4">
+          <label class="block text-sm font-medium">Select Model to Manage</label>
+          <select v-model="selectedModelId" @change="onModelSelect" class="w-full border rounded px-3 py-2">
+            <option :value="null" disabled>Select a model...</option>
+            <option v-for="m in modelOptions" :key="m.models_id" :value="m.models_id">{{ m.name || m.label }}</option>
+          </select>
+
+          <div v-if="selectedModel()" class="p-4 border rounded bg-gray-50">
+            <h4 class="font-bold text-lg">{{ selectedModel().name }}</h4>
+            <p class="text-sm text-gray-600 mt-1" v-if="selectedModel().description">{{ selectedModel().description }}</p>
+            <p class="text-sm text-gray-600 mt-1" v-if="selectedModel().unit_price !== null">
+              <span class="font-semibold">Unit Price:</span> Rp {{ formatNumber(selectedModel().unit_price) }}
+            </p>
+            <p class="text-sm text-gray-600 mt-1" v-if="selectedModel().size_fields && selectedModel().size_fields.length > 0">
+              <span class="font-semibold">Size Fields:</span>
+              <ul class="ml-4 list-disc text-sm">
+                <li v-for="f in selectedModel().size_fields" :key="f.key">{{ f.label || f.key }} <span v-if="f.unit">({{ f.unit }})</span></li>
+              </ul>
+            </p>
           </div>
 
-          <!-- Edit Form -->
+          <div class="mt-4">
+            <button @click="viewMode = 'list'" class="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">Back to Orders</button>
+          </div>
+        </div>
+
+        <!-- Right: edit/replace form -->
+        <div class="p-4 border rounded bg-white">
+          <h4 class="font-semibold mb-3">Edit / Replace Model</h4>
+
+          <div v-if="!selectedModel()" class="text-sm text-gray-500">Choose a model on the left to edit or delete.</div>
+
           <div v-else class="space-y-3">
             <div>
               <label class="block text-sm font-medium mb-1">Model Name</label>
@@ -147,22 +157,46 @@
               <label class="block text-sm font-medium mb-1">Unit Price</label>
               <input v-model.number="editForm.unit_price" type="number" min="0" step="1000" class="w-full border rounded px-3 py-2" />
             </div>
-            <div class="flex space-x-2">
-              <button @click="saveEditModel()" class="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700">
-                Save
-              </button>
-              <button @click="cancelEditModel()" class="px-3 py-2 bg-gray-300 rounded hover:bg-gray-400">
-                Cancel
-              </button>
+
+            <!-- Size fields editor for editForm -->
+            <div>
+              <div class="flex items-center justify-between mb-2">
+                <label class="block text-sm font-medium">Size Fields</label>
+                <button @click="addEditSizeField" type="button" class="px-3 py-1 bg-green-500 text-white text-sm rounded hover:bg-green-600">+ Add Field</button>
+              </div>
+
+              <div v-if="editForm.size_fields.length === 0" class="text-sm text-gray-500 italic p-2 bg-gray-50 rounded">No size fields. Add one to include size fields for this model.</div>
+
+              <div v-for="(field, idx) in editForm.size_fields" :key="idx" class="mb-2 p-2 border rounded bg-gray-50">
+                <div class="grid grid-cols-12 gap-2">
+                  <div class="col-span-4">
+                    <input v-model="field.key" placeholder="key (e.g., lingkar_dada)" class="w-full border rounded px-2 py-1 text-sm" />
+                  </div>
+                  <div class="col-span-4">
+                    <input v-model="field.label" placeholder="label" class="w-full border rounded px-2 py-1 text-sm" />
+                  </div>
+                  <div class="col-span-2">
+                    <select v-model="field.type" class="w-full border rounded px-2 py-1 text-sm">
+                      <option value="number">number</option>
+                      <option value="text">text</option>
+                    </select>
+                  </div>
+                  <div class="col-span-1">
+                    <input v-model="field.unit" placeholder="unit" class="w-full border rounded px-2 py-1 text-sm" />
+                  </div>
+                  <div class="col-span-1 flex items-end">
+                    <button @click="removeEditSizeField(idx)" class="w-full px-2 py-1 bg-red-500 text-white rounded text-sm">Remove</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="flex space-x-2 mt-3">
+              <button @click="saveEditModel()" class="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700">Save Changes</button>
+              <button @click="deleteSelectedModel()" class="px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700">Delete Model</button>
             </div>
           </div>
         </div>
-      </div>
-
-      <div class="mt-4">
-        <button @click="viewMode = 'list'" class="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">
-          Back to Orders
-        </button>
       </div>
     </div>
 
@@ -345,10 +379,11 @@ export default {
 
     // Model options - will be fetched from backend or use fallback
     const modelOptions = ref([])
+    const selectedModelId = ref(null)
     
     // Model editing state
     const editingModelId = ref(null)
-    const editForm = ref({ name: '', description: '', unit_price: null })
+    const editForm = ref({ name: '', description: '', unit_price: null, size_fields: [] })
     
     // Fallback model options with hardcoded fields (used if backend doesn't have models or size_fields)
     const fallbackModelOptions = [
@@ -402,7 +437,7 @@ export default {
         if (models && models.length > 0) {
           console.log('[Dashboard] Step 2: Processing models...');
           
-          // Convert backend models to frontend format
+          // Convert backend models to frontend format and preserve metadata
           modelOptions.value = models.map((m, idx) => {
             console.log(`[Dashboard] Processing model ${idx + 1}:`, {
               models_id: m.models_id,
@@ -425,6 +460,12 @@ export default {
               console.log(`[Dashboard] Converted fields for model ${idx + 1}:`, fields.map(f => f.key));
               
               return {
+                models_id: m.models_id,
+                name: m.name || 'Unknown Model',
+                description: m.description || '',
+                size_fields: m.size_fields || [],
+                unit_price: m.unit_price || null,
+                // keep old shape for existing template code compatibility
                 key: m.name || m.models_id,
                 label: m.name || 'Unknown Model',
                 fields: fields
@@ -441,6 +482,11 @@ export default {
               }
               
               return {
+                models_id: m.models_id,
+                name: m.name || 'Unknown Model',
+                description: m.description || '',
+                size_fields: Array.isArray(m.size_fields) ? m.size_fields : [],
+                unit_price: m.unit_price || null,
                 key: m.name || m.models_id,
                 label: m.name || 'Unknown Model',
                 fields: fallback ? fallback.fields : []
@@ -500,7 +546,7 @@ export default {
 
     function getFieldsForModel(key) {
       console.log('[Dashboard] getFieldsForModel called for:', key);
-      const m = modelOptions.value.find(x => x.key === key);
+      const m = modelOptions.value.find(x => x.key === key || x.name === key || x.models_id === key);
       
       if (m) {
         console.log('[Dashboard] ✓ Found model:', m.label);
@@ -516,6 +562,12 @@ export default {
         console.warn('[Dashboard] Available models:', modelOptions.value.map(x => x.key));
         return [];
       }
+    }
+
+    // helper: find selected model object by id
+    function selectedModel() {
+      if (!selectedModelId.value) return null
+      return modelOptions.value.find(m => m.models_id === selectedModelId.value) || null
     }
 
     async function load() {
@@ -853,6 +905,62 @@ export default {
       console.log('[Dashboard] ========================================');
     }
 
+    // Edit-form size field helpers
+    function addEditSizeField() {
+      console.log('[Dashboard] addEditSizeField called');
+      if (!editForm.value || !Array.isArray(editForm.value.size_fields)) editForm.value.size_fields = [];
+      editForm.value.size_fields.push({ key: '', label: '', type: 'number', unit: 'cm' });
+    }
+
+    function removeEditSizeField(index) {
+      console.log('[Dashboard] removeEditSizeField called', index);
+      if (!editForm.value || !Array.isArray(editForm.value.size_fields)) return;
+      if (index >= 0 && index < editForm.value.size_fields.length) {
+        editForm.value.size_fields.splice(index, 1);
+      }
+    }
+
+    // Called when selecting a model from dropdown
+    function onModelSelect() {
+      const sel = selectedModel();
+      console.log('[Dashboard] onModelSelect:', sel ? sel.name : 'null');
+      if (!sel) {
+        editForm.value = { name: '', description: '', unit_price: null, size_fields: [] };
+        editingModelId.value = null;
+        return;
+      }
+      editingModelId.value = sel.models_id;
+      editForm.value = {
+        name: sel.name || '',
+        description: sel.description || '',
+        unit_price: sel.unit_price || null,
+        size_fields: Array.isArray(sel.size_fields) ? JSON.parse(JSON.stringify(sel.size_fields)) : []
+      };
+    }
+
+    // Delete selected model (uses same flow as deleteModel but for selected)
+    async function deleteSelectedModel() {
+      const sel = selectedModel();
+      if (!sel) return alert('No model selected');
+      if (!confirm(`Are you sure you want to delete the model "${sel.name}"? This cannot be undone.`)) return;
+      try {
+        const token = getToken();
+        const response = await fetch(`/api/models/${sel.models_id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          if (response.status === 409) return alert(err.error || 'Cannot delete model that is referenced by existing orders.');
+          throw new Error(err.error || `Delete failed: ${response.status}`);
+        }
+        await loadModels();
+        selectedModelId.value = null;
+        editForm.value = { name: '', description: '', unit_price: null, size_fields: [] };
+        alert('Model deleted successfully');
+      } catch (e) {
+        console.error('[Dashboard] deleteSelectedModel failed', e);
+        alert('Failed to delete model: ' + (e.message || e));
+      }
+    }
+
     async function createModel() {
       console.log('[Dashboard] ========================================');
       console.log('[Dashboard] === Creating new model ===');
@@ -961,14 +1069,16 @@ export default {
       }
     }
 
-    // Start editing a model
+    // Start editing a model (legacy support)
     function startEditModel(model) {
       console.log('[Dashboard] Starting model edit:', model.name);
+      selectedModelId.value = model.models_id;
       editingModelId.value = model.models_id;
       editForm.value = {
         name: model.name || '',
         description: model.description || '',
-        unit_price: model.unit_price || null
+        unit_price: model.unit_price || null,
+        size_fields: Array.isArray(model.size_fields) ? JSON.parse(JSON.stringify(model.size_fields)) : []
       };
     }
 
@@ -976,30 +1086,36 @@ export default {
     function cancelEditModel() {
       console.log('[Dashboard] Cancelling model edit');
       editingModelId.value = null;
-      editForm.value = { name: '', description: '', unit_price: null };
+      editForm.value = { name: '', description: '', unit_price: null, size_fields: [] };
     }
 
     // Save edited model
     async function saveEditModel() {
       console.log('[Dashboard] === Saving model edits ===');
       try {
-        if (!editingModelId.value) {
+        const modelId = selectedModelId.value || editingModelId.value;
+        if (!modelId) {
           throw new Error('No model selected for editing');
         }
 
         console.log('[Dashboard] Preparing update payload');
         const payload = {};
-        
+
         if (editForm.value.name && editForm.value.name.trim()) {
           payload.name = editForm.value.name.trim();
         }
-        
+
         if (editForm.value.description !== undefined) {
           payload.description = editForm.value.description?.trim() || null;
         }
-        
+
         if (editForm.value.unit_price !== undefined && editForm.value.unit_price !== null && editForm.value.unit_price !== '') {
           payload.unit_price = Number(editForm.value.unit_price);
+        }
+
+        if (editForm.value.size_fields !== undefined) {
+          // send size_fields as array (may be empty)
+          payload.size_fields = Array.isArray(editForm.value.size_fields) ? editForm.value.size_fields : [];
         }
 
         console.log('[Dashboard] Update payload:', payload);
@@ -1010,7 +1126,7 @@ export default {
 
         console.log('[Dashboard] Sending PATCH /models/:id request');
         const token = getToken();
-        const response = await fetch(`/api/models/${editingModelId.value}`, {
+        const response = await fetch(`/api/models/${modelId}`, {
           method: 'PATCH',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -1032,7 +1148,7 @@ export default {
 
         // Clear edit state
         editingModelId.value = null;
-        editForm.value = { name: '', description: '', unit_price: null };
+        editForm.value = { name: '', description: '', unit_price: null, size_fields: [] };
 
         alert('Model updated successfully!');
       } catch (err) {
@@ -1138,10 +1254,16 @@ export default {
       createModel,
       editingModelId,
       editForm,
+      selectedModelId,
+      onModelSelect,
+      selectedModel,
+      addEditSizeField,
+      removeEditSizeField,
       startEditModel,
       cancelEditModel,
       saveEditModel,
-      deleteModel
+      deleteModel,
+      deleteSelectedModel
     }
   }
 }
