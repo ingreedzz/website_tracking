@@ -79,6 +79,25 @@
             <button @click="reloadOrder" class="ml-2 px-3 py-2 bg-gray-200 rounded">Reload</button>
           </div>
         </div>
+
+        <!-- Order History -->
+        <div class="mt-6 p-4 border rounded bg-white">
+          <h3 class="font-semibold mb-2">Order History</h3>
+          <div v-if="loading">Loading history…</div>
+          <div v-else-if="!order.history || order.history.length === 0">No history available.</div>
+          <div v-else class="space-y-3">
+            <div v-for="h in order.history" :key="h.order_status_history_id" class="p-3 border rounded">
+              <div class="text-xs text-gray-500">{{ formatDate(h.created_at) }}</div>
+              <div class="mt-1"><strong>By:</strong> {{ h.changed_by_name || h.changed_by_email || h.changed_by }}</div>
+              <div class="mt-1"><strong>Transition:</strong> {{ h.old_status || '-' }} → {{ h.new_status }}</div>
+              <div v-if="h.note" class="mt-1 text-sm"><strong>Note:</strong> {{ h.note }}</div>
+              <div class="mt-1 text-sm text-gray-600">
+                <span v-if="h.payment_status"><strong>Payment:</strong> {{ h.payment_status }}</span>
+                <span v-if="h.product" class="ml-2"><strong>Product:</strong> {{ h.product }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </section>
@@ -173,6 +192,7 @@ async function loadOrder() {
     // Use API helper for authenticated request
     const data = await apiGet(`/orders/${id}`)
     order.value = data
+    console.log('[orderDetail] loaded order', order.value?.id, 'historyCount=', order.value?.history?.length || 0)
   } catch (e) {
     console.error('[orderDetail] load error', e)
     order.value = null

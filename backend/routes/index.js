@@ -725,6 +725,28 @@ router.get('/orders/:id', verifyToken, async (req, res) => {
       custom: firstItem?.customization || {}
     };
     
+    // Fetch history and attach it to the normalized order
+    try {
+      const requestId = req.id || 'unknown';
+      console.log(`[REQ:${requestId}] [ORDERS/:id] Fetching history for order ${id}`);
+      const { data: historyRows, error: historyErr } = await supabase
+        .from('order_status_history')
+        .select('order_status_history_id, order_id, old_status, new_status, changed_by, changed_by_id, changed_by_email, changed_by_name, note, customer_name, product, order_name, payment_status, created_at')
+        .eq('order_id', id)
+        .order('created_at', { ascending: false });
+
+      if (historyErr) {
+        console.warn(`[REQ:${requestId}] [ORDERS/:id] Failed to fetch history:`, historyErr && historyErr.message);
+        normalized.history = [];
+      } else {
+        console.log(`[REQ:${requestId}] [ORDERS/:id] History rows retrieved:`, historyRows?.length || 0);
+        normalized.history = Array.isArray(historyRows) ? historyRows : [];
+      }
+    } catch (e) {
+      console.warn(`[REQ:${requestId}] [ORDERS/:id] Exception while fetching history:`, e && e.message);
+      normalized.history = [];
+    }
+    
     console.log('[GET /orders/:id] Returning normalized order');
     res.json(normalized);
   } catch (err) {
