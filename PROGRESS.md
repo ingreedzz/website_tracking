@@ -1,5 +1,40 @@
 ### November 14, 2025 - Update Order Status Feature Implementation (Minimal Changes)
 
+### November 14, 2025 - DB Migration Applied: Extended order_status_history
+
+**Summary:** The DB migration to extend `order_status_history` was applied and verified. This adds fields that enable richer, human-readable audit trails for order status changes while preserving the legacy UUID `changed_by` column.
+
+- Migration files applied (in this order):
+  - `backend/database/migrations/20251114_add_order_status_history_fields.sql`
+  - `backend/database/migrations/20251114_order_status_history_trigger_and_constraints.sql`
+  - `backend/database/migrations/20251114_backfill_order_status_history.sql`
+  - `backend/database/migrations/20251114_convert_models_size_fields_to_jsonb.sql`
+
+**Verification:** The following columns exist on `order_status_history` (queried from information_schema):
+
+```
+order_status_history_id    (uuid)
+order_id                  (uuid)
+old_status                (text)
+new_status                (text)
+changed_by                (uuid)
+note                      (text)
+created_at                (timestamp with time zone)
+changed_by_id             (uuid)
+changed_by_email          (text)
+changed_by_name           (text)
+customer_name             (text)
+product                   (text)
+order_name                (text)
+payment_status            (text)
+```
+
+**Notes:**
+- Backend code was patched to write the user's UUID into the legacy `changed_by` column (UUID typed) and to populate the new readable columns (`changed_by_id`, `changed_by_email`, `changed_by_name`) when available. This avoids type errors while preserving human-readable audit data.
+- Once migrations are applied, the extended insert path in `PUT /api/server/orders/:id/status` should succeed and history rows will include the new fields.
+- A smoke test (`tmp/order_status_smoketest.js`) can be re-run after restarting the backend to confirm rows are recorded and returned in the API response.
+
+
 ### November 14, 2025 - Follow-up: Extended History & Smoke Test Results
 
 **Summary:** Small follow-up after the main status-update work — fixed a duplicate-constant compile error, implemented an extended order status history insert (with graceful fallback when DB columns are absent), added frontend status-update UI, and ran end-to-end smoke tests validating the full flow.
