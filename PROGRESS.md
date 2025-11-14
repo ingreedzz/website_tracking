@@ -2497,3 +2497,17 @@ Status: committed locally in branch `copilot/add-debug-logs-and-fix-issues` and 
 ### Agent Memory Created
 
 - Created `.AI_MEMORY.md` to record agent-visible facts and safe-operation policies (connections to Vercel, Render, Supabase, and GitHub MCP; migration scripts; and instructions). This file is used by the agent for planning and testing guidance. It does not contain sensitive secrets.
+
+---
+
+### November 14, 2025 - Thesis Draft Created (Initial)
+
+**Summary:** Initial skripsi draft created from the repository and saved at `thesis/thesis.md`. The draft is in Indonesian; English technical terms are italicized. It includes: Abstract, Introduction, Methods (design & architecture), Implementation mapping, Testing suggestions, and conversion instructions to *Word*/*Google Docs*.
+
+**Files Created:**
+- `thesis/thesis.md` — initial Indonesian draft (Markdown).
+
+**Next Steps:**
+- I will continue by drafting Bab 2 (Tinjauan Pustaka) and Bab 5 (Pengujian) and add diagrams/screenshots into `thesis/img/`.
+- If you want, I can convert `thesis/thesis.md` to `thesis/sistemskripsi.docx` (requires *pandoc*). Ask me to proceed and I will convert and commit the `.docx`.
+
