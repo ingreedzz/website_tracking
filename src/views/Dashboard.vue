@@ -332,7 +332,10 @@
                     <div v-else>-</div>
                   </td>
                   <td class="p-2 border">
-                    <button @click="goToDetail(o.id || o.orders_id)" class="px-2 py-1 bg-blue-500 text-white rounded">View</button>
+                    <div class="flex flex-col space-y-1">
+                      <button @click="goToDetail(o.id || o.orders_id)" class="px-2 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600">View</button>
+                      <button @click="goToHistory(o.id || o.orders_id)" class="px-2 py-1 bg-indigo-500 text-white rounded text-sm hover:bg-indigo-600">History</button>
+                    </div>
                   </td>
             </tr>
           </tbody>
@@ -762,6 +765,19 @@ export default {
       router.push({ name: 'OrderDetail', params: { id: String(id) } }) 
     } catch (e) { 
       console.error('[goToDetail] router.push failed', e);
+    } 
+  }
+  
+  function goToHistory(id) { 
+    console.log('[goToHistory] Navigating to order history:', id);
+    if (!id) {
+      console.error('[goToHistory] No order ID provided');
+      return;
+    }
+    try { 
+      router.push({ name: 'OrderHistory', params: { id: String(id) } }) 
+    } catch (e) { 
+      console.error('[goToHistory] router.push failed', e);
     } 
   }
     function trackOrder(id) { alert('Track order ' + id) }
@@ -1231,6 +1247,7 @@ export default {
       loading,
       isAdmin,
       goToDetail,
+      goToHistory,
       trackOrder,
       handleCreate,
       createOrder: handleCreate,
