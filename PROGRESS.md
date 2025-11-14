@@ -1,3 +1,91 @@
+### November 13, 2025 - Payment Validation Enhancement (Minimal Changes)
+
+**Objective: Add missing payment validations per CODING_AGENT_PROMPT_payments_and_status_changes.md**
+
+This update adds minimal validation logic to the payment endpoint to prevent invalid payment submissions and corrects the success message displayed to users.
+
+**Key Changes (Minimal - 2 files, 19 lines):**
+
+**Backend (backend/routes/index.js):**
+- **Enhanced POST /api/server/orders/:id/payment**:
+  - Added Step 2.5: Payment eligibility validation (18 lines)
+    - Check if `payment_status === 'completed'` → return 409 "Payment already completed"
+    - Check if `order.total` is missing/zero → return 400 "Order incomplete — missing price or product information"
+  - All existing functionality preserved (payments.status = 'completed', orders.payment_status = 'completed')
+  - Comprehensive debug logging maintained
+
+**Frontend (src/views/Payment.vue):**
+- Fixed success message (1 line):
+  - Changed: "Order status updated to completed" → "Payment status updated to completed"
+- Button already correctly labeled "Upload Payment" (no change needed)
+
+**What Was Already Implemented:**
+The following features from the prompt files were already fully functional:
+- ✅ Payment endpoint sets `payments.status = 'completed'` when file uploaded
+- ✅ Payment endpoint sets `orders.payment_status = 'completed'` 
+- ✅ PATCH /api/models/:id endpoint for model editing
+- ✅ DELETE /api/models/:id endpoint with FK constraint handling
+- ✅ Manage Models UI in Dashboard.vue with edit/delete
+- ✅ Server-side price calculation using model unit_price
+- ✅ unit_price column in models table
+- ✅ Comprehensive debug logging throughout
+
+**Testing:**
+- ✅ Frontend build successful (324.42 kB, gzip: 97.20 kB)
+- ✅ Backend syntax validation passed
+- ✅ CodeQL security scan: 0 alerts
+- 🔄 Manual testing required by owner (see Testing Plan below)
+
+**Testing Plan:**
+
+1. **Test Payment Validation - Already Paid Order:**
+   ```bash
+   # Attempt to pay an already-paid order
+   curl -X POST "http://localhost:3000/api/server/orders/<order_id>/payment" \
+     -H "Authorization: Bearer $TOKEN" \
+     -F "file=@payment.jpg"
+   # Expected: 409 "Payment already completed"
+   ```
+
+2. **Test Payment Validation - Incomplete Order:**
+   ```bash
+   # Attempt to pay an order with no total
+   # First create order without proper total, then try to pay
+   # Expected: 400 "Order incomplete — missing price or product information"
+   ```
+
+3. **Test Success Message:**
+   - Create order → Go to Payment page → Upload payment
+   - Expected alert: "Payment uploaded successfully. Payment status updated to completed."
+   - Expected: `payments.status = 'completed'` and `orders.payment_status = 'completed'`
+
+4. **Test Model Management (Already Implemented):**
+   - Dashboard → Manage Models → Edit model → Save
+   - Dashboard → Manage Models → Delete model (with/without orders)
+   - Expected: All operations work correctly with proper error messages
+
+**Files Modified:**
+1. `backend/routes/index.js` (+18 lines) - Added payment validation
+2. `src/views/Payment.vue` (+1 line) - Fixed success message
+3. `dist/` - Rebuilt frontend assets
+
+**Acceptance Criteria Met:**
+- ✅ Payment blocked if `payment_status === 'completed'` (409 error)
+- ✅ Payment blocked if order incomplete/missing total (400 error)
+- ✅ Success message mentions "Payment status" not "Order status"
+- ✅ Button labeled "Upload payment" (already was)
+- ✅ Payments and orders updated to 'completed' status (already implemented)
+- ✅ Model management UI fully functional (already implemented)
+- ✅ Server-side price calculation working (already implemented)
+
+**Security:**
+- CodeQL scan: 0 new alerts
+- All validations server-side
+- No breaking changes
+- Minimal modifications reduce risk
+
+---
+
 ### November 13, 2025 - Comprehensive Pricing and Model Management Implementation
 
 **Major Feature: Complete Pricing System and Model CRUD Operations**

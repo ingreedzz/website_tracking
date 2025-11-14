@@ -1370,6 +1370,23 @@ router.post('/server/orders/:id/payment', verifyToken, upload.single('file'), as
     console.log(`[REQ:${requestId}] [PAYMENT]   Order total: ${orderRows.total}`);
     console.log(`[REQ:${requestId}] [PAYMENT]   Current payment status: ${orderRows.payment_status || 'not set'}`);
 
+    // Step 2.5: Validate order is payable
+    console.log(`[REQ:${requestId}] [PAYMENT] STEP 2.5: VALIDATING ORDER IS PAYABLE`);
+    
+    // Check if payment already completed
+    if (orderRows.payment_status === 'completed') {
+      console.error(`[REQ:${requestId}] [PAYMENT] ❌ ERROR: Payment already completed`);
+      return res.status(409).json({ error: 'Payment already completed' });
+    }
+    
+    // Check if order has total price
+    if (!orderRows.total || orderRows.total === 0) {
+      console.error(`[REQ:${requestId}] [PAYMENT] ❌ ERROR: Order incomplete - missing price`);
+      return res.status(400).json({ error: 'Order incomplete — missing price or product information' });
+    }
+    
+    console.log(`[REQ:${requestId}] [PAYMENT] ✓ Order is payable`);
+
     // Upload file to Supabase Storage
     let proofPath = null;
     let publicUrl = null;
