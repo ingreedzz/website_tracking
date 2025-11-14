@@ -1762,6 +1762,203 @@ router.put('/server/orders/:id/status', verifyToken, async (req, res) => {
   }
 });
 
+// Delete an order (DELETE /api/server/orders/:id)
+router.delete('/server/orders/:id', verifyToken, async (req, res) => {
+  const requestId = req.id || 'unknown';
+  const userId = req.user?.users_id || req.user?.user_id || null;
+  const orderId = req.params.id;
+  
+  console.log(`[REQ:${requestId}] [ORDER-DELETE] ========================================`);
+  console.log(`[REQ:${requestId}] [ORDER-DELETE] === Deleting order ===`);
+  console.log(`[REQ:${requestId}] [ORDER-DELETE] Timestamp:`, new Date().toISOString());
+  console.log(`[REQ:${requestId}] [ORDER-DELETE] User:`, { users_id: userId, is_admin: req.user?.is_admin });
+  console.log(`[REQ:${requestId}] [ORDER-DELETE] Order ID:`, orderId);
+  
+  try {
+    if (!orderId) {
+      console.error(`[REQ:${requestId}] [ORDER-DELETE] ❌ Order ID is required`);
+      return res.status(400).json({ error: 'Order ID is required' });
+    }
+    
+    if (!userId) {
+      console.error(`[REQ:${requestId}] [ORDER-DELETE] ❌ User not authenticated`);
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+    
+    // Step 1: Check if order exists and fetch related data
+    console.log(`[REQ:${requestId}] [ORDER-DELETE] Step 1: Checking if order exists`);
+    const { data: existingOrder, error: fetchErr } = await supabase
+      .from('orders')
+      .select('*, order_items(*)')
+      .eq('orders_id', orderId)
+      .maybeSingle();
+    
+    if (fetchErr) {
+      console.error(`[REQ:${requestId}] [ORDER-DELETE] ❌ Database fetch error:`, fetchErr.message);
+      return res.status(500).json({ error: 'Failed to fetch order' });
+    }
+    
+    if (!existingOrder) {
+      console.error(`[REQ:${requestId}] [ORDER-DELETE] ❌ Order not found`);
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    
+    console.log(`[REQ:${requestId}] [ORDER-DELETE] ✓ Order found`);
+    console.log(`[REQ:${requestId}] [ORDER-DELETE] Order status:`, existingOrder.status);
+    console.log(`[REQ:${requestId}] [ORDER-DELETE] Order owner:`, existingOrder.user_id);
+    console.log(`[REQ:${requestId}] [ORDER-DELETE] Order items:`, existingOrder.order_items?.length || 0);
+    
+    // Step 2: Delete related data (order_items, order_addresses, payments, history)
+    console.log(`[REQ:${requestId}] [ORDER-DELETE] Step 2: Deleting related data`);
+    
+    // Delete order_items
+    try {
+      console.log(`[REQ:${requestId}] [ORDER-DELETE] Deleting order_items...`);
+      const { error: itemsErr } = await supabase
+        .from('order_items')
+        .delete()
+        .eq('order_id', orderId);
+      
+      if (itemsErr) {
+        console.warn(`[REQ:${requestId}] [ORDER-DELETE] ⚠️  Failed to delete order_items:`, itemsErr.message);
+      } else {
+        console.log(`[REQ:${requestId}] [ORDER-DELETE] ✓ Order items deleted`);
+      }
+    } catch (e) {
+      console.warn(`[REQ:${requestId}] [ORDER-DELETE] ⚠️  Exception deleting order_items:`, e.message);
+    }
+    
+    // Delete order_addresses
+    try {
+      console.log(`[REQ:${requestId}] [ORDER-DELETE] Deleting order_addresses...`);
+      const { error: addrErr } = await supabase
+        .from('order_addresses')
+        .delete()
+        .eq('order_id', orderId);
+      
+      if (addrErr) {
+        console.warn(`[REQ:${requestId}] [ORDER-DELETE] ⚠️  Failed to delete order_addresses:`, addrErr.message);
+      } else {
+        console.log(`[REQ:${requestId}] [ORDER-DELETE] ✓ Order addresses deleted`);
+      }
+    } catch (e) {
+      console.warn(`[REQ:${requestId}] [ORDER-DELETE] ⚠️  Exception deleting order_addresses:`, e.message);
+    }
+    
+    // Delete payments
+    try {
+      console.log(`[REQ:${requestId}] [ORDER-DELETE] Deleting payments...`);
+      const { error: payErr } = await supabase
+        .from('payments')
+        .delete()
+        .eq('order_id', orderId);
+      
+      if (payErr) {
+        console.warn(`[REQ:${requestId}] [ORDER-DELETE] ⚠️  Failed to delete payments:`, payErr.message);
+      } else {
+        console.log(`[REQ:${requestId}] [ORDER-DELETE] ✓ Payments deleted`);
+      }
+    } catch (e) {
+      console.warn(`[REQ:${requestId}] [ORDER-DELETE] ⚠️  Exception deleting payments:`, e.message);
+    }
+    
+    // Delete order_status_history
+    try {
+      console.log(`[REQ:${requestId}] [ORDER-DELETE] Deleting order_status_history...`);
+      const { error: histErr } = await supabase
+        .from('order_status_history')
+        .delete()
+        .eq('order_id', orderId);
+      
+      if (histErr) {
+        console.warn(`[REQ:${requestId}] [ORDER-DELETE] ⚠️  Failed to delete order_status_history:`, histErr.message);
+      } else {
+        console.log(`[REQ:${requestId}] [ORDER-DELETE] ✓ Order status history deleted`);
+      }
+    } catch (e) {
+      console.warn(`[REQ:${requestId}] [ORDER-DELETE] ⚠️  Exception deleting order_status_history:`, e.message);
+    }
+    
+    // Step 3: Delete the order itself
+    console.log(`[REQ:${requestId}] [ORDER-DELETE] Step 3: Deleting order from database`);
+    const { error: deleteErr } = await supabase
+      .from('orders')
+      .delete()
+      .eq('orders_id', orderId);
+    
+    if (deleteErr) {
+      console.error(`[REQ:${requestId}] [ORDER-DELETE] ❌ Database delete error:`, {
+        message: deleteErr.message,
+        details: deleteErr.details,
+        hint: deleteErr.hint,
+        code: deleteErr.code
+      });
+      return res.status(500).json({ error: deleteErr.message || deleteErr });
+    }
+    
+    console.log(`[REQ:${requestId}] [ORDER-DELETE] ✓ Order deleted successfully`);
+    
+    // Step 4: Clean up uploaded files (sablon images, payment proofs)
+    console.log(`[REQ:${requestId}] [ORDER-DELETE] Step 4: Cleaning up uploaded files`);
+    const filesToDelete = [];
+    
+    // Collect sablon image paths
+    if (existingOrder.order_items && Array.isArray(existingOrder.order_items)) {
+      existingOrder.order_items.forEach(item => {
+        if (item.sablon_path) {
+          filesToDelete.push(item.sablon_path);
+          console.log(`[REQ:${requestId}] [ORDER-DELETE] Found sablon file:`, item.sablon_path);
+        }
+      });
+    }
+    
+    // Collect payment proof path
+    if (existingOrder.payment_proof_url) {
+      filesToDelete.push(existingOrder.payment_proof_url);
+      console.log(`[REQ:${requestId}] [ORDER-DELETE] Found payment proof:`, existingOrder.payment_proof_url);
+    }
+    
+    // Delete files from storage
+    if (filesToDelete.length > 0) {
+      try {
+        console.log(`[REQ:${requestId}] [ORDER-DELETE] Deleting ${filesToDelete.length} files from storage...`);
+        const { error: storageErr } = await supabase.storage
+          .from(UPLOAD_BUCKET)
+          .remove(filesToDelete);
+        
+        if (storageErr) {
+          console.warn(`[REQ:${requestId}] [ORDER-DELETE] ⚠️  Failed to delete files:`, storageErr.message);
+        } else {
+          console.log(`[REQ:${requestId}] [ORDER-DELETE] ✓ Files deleted from storage`);
+        }
+      } catch (e) {
+        console.warn(`[REQ:${requestId}] [ORDER-DELETE] ⚠️  Exception deleting files:`, e.message);
+      }
+    } else {
+      console.log(`[REQ:${requestId}] [ORDER-DELETE] No files to delete`);
+    }
+    
+    console.log(`[REQ:${requestId}] [ORDER-DELETE] === Delete complete ===`);
+    console.log(`[REQ:${requestId}] [ORDER-DELETE] ========================================`);
+    
+    return res.status(200).json({ 
+      message: 'Order deleted successfully', 
+      order: {
+        orders_id: existingOrder.orders_id,
+        status: existingOrder.status,
+        total: existingOrder.total
+      }
+    });
+  } catch (err) {
+    console.error(`[REQ:${requestId}] [ORDER-DELETE] ❌ Unexpected error:`, err.message || err);
+    console.error(`[REQ:${requestId}] [ORDER-DELETE] Error name:`, err.name);
+    console.error(`[REQ:${requestId}] [ORDER-DELETE] Error stack:`, err.stack);
+    console.error(`[REQ:${requestId}] [ORDER-DELETE] === Delete failed ===`);
+    console.error(`[REQ:${requestId}] [ORDER-DELETE] ========================================`);
+    return res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
 // Get all models (with size_fields if column exists)
 router.get('/models', async (req, res) => {
   const requestId = req.id || 'unknown';

@@ -32,8 +32,9 @@
             <a :href="order.payment_proof_url || order.payment_proof_path" target="_blank" class="text-blue-600 underline">Open proof image</a>
           </div>
         </div>
-        <div class="mt-4">
-          <router-link class="px-4 py-2 bg-gray-200 rounded" to="/payment">Back to payments</router-link>
+        <div class="mt-4 flex space-x-3">
+          <router-link class="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300" to="/dashboard">Back to Dashboard</router-link>
+          <button @click="goToHistory" class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">View Order History</button>
         </div>
 
         <!-- Status update form (available to any authenticated user) -->
@@ -74,29 +75,17 @@
             </label>
           </div>
 
-          <div>
-            <button @click="submitStatus" class="px-4 py-2 bg-blue-600 text-white rounded">Update Status</button>
-            <button @click="reloadOrder" class="ml-2 px-3 py-2 bg-gray-200 rounded">Reload</button>
+          <div class="flex space-x-2">
+            <button @click="submitStatus" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Update Status</button>
+            <button @click="reloadOrder" class="px-3 py-2 bg-gray-300 rounded hover:bg-gray-400">Reload</button>
           </div>
         </div>
 
-        <!-- Order History -->
-        <div class="mt-6 p-4 border rounded bg-white">
-          <h3 class="font-semibold mb-2">Order History</h3>
-          <div v-if="loading">Loading history…</div>
-          <div v-else-if="!order.history || order.history.length === 0">No history available.</div>
-          <div v-else class="space-y-3">
-            <div v-for="h in order.history" :key="h.order_status_history_id" class="p-3 border rounded">
-              <div class="text-xs text-gray-500">{{ formatDate(h.created_at) }}</div>
-              <div class="mt-1"><strong>By:</strong> {{ h.changed_by_name || h.changed_by_email || h.changed_by }}</div>
-              <div class="mt-1"><strong>Transition:</strong> {{ h.old_status || '-' }} → {{ h.new_status }}</div>
-              <div v-if="h.note" class="mt-1 text-sm"><strong>Note:</strong> {{ h.note }}</div>
-              <div class="mt-1 text-sm text-gray-600">
-                <span v-if="h.payment_status"><strong>Payment:</strong> {{ h.payment_status }}</span>
-                <span v-if="h.product" class="ml-2"><strong>Product:</strong> {{ h.product }}</span>
-              </div>
-            </div>
-          </div>
+        <!-- Delete Order Section -->
+        <div class="mt-6 p-4 border border-red-300 rounded bg-red-50">
+          <h3 class="font-semibold mb-2 text-red-700">Danger Zone</h3>
+          <p class="text-sm text-gray-700 mb-3">Once you delete an order, there is no going back. Please be certain.</p>
+          <button @click="deleteOrder" class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">Delete Order</button>
         </div>
       </div>
     </div>
@@ -105,13 +94,16 @@
 
 <script setup>
 import { ref, onMounted, computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { apiGet, apiPut } from '../lib/api'
 
 const route = useRoute()
+const router = useRouter()
 const id = route.params.id
 const order = ref(null)
 const loading = ref(true)
+
+console.log('[OrderDetail] Component mounted, order ID:', id);
 
 function formatMoney(v) {
   try {
@@ -210,8 +202,20 @@ const note = ref('')
 const force = ref(false)
 
 async function submitStatus() {
+  console.log('[OrderDetail] === Submitting status update ===');
+  console.log('[OrderDetail] Timestamp:', new Date().toISOString());
+  console.log('[OrderDetail] Order ID:', id);
+  console.log('[OrderDetail] New status:', newStatus.value);
+  console.log('[OrderDetail] Payment status:', newPaymentStatus.value || '(not changing)');
+  console.log('[OrderDetail] Note:', note.value || '(none)');
+  console.log('[OrderDetail] Force:', force.value);
+  
   try {
-    if (!newStatus.value) return alert('Please select a new status')
+    if (!newStatus.value) {
+      console.error('[OrderDetail] No status selected');
+      return alert('Please select a new status');
+    }
+    
     const payload = {
       status: newStatus.value,
       note: note.value || null,
@@ -219,22 +223,88 @@ async function submitStatus() {
       force: !!force.value
     }
     if (newPaymentStatus.value) payload.payment_status = newPaymentStatus.value
+    
+    console.log('[OrderDetail] Payload:', payload);
+    console.log('[OrderDetail] Calling API PUT /server/orders/:id/status');
+    
     // call API helper
     await apiPut(`/server/orders/${id}/status`, payload)
+    
+    console.log('[OrderDetail] ✓ Status update successful');
     alert('Order status updated')
+    
+    console.log('[OrderDetail] Reloading order data...');
     await loadOrder()
+    
     // reset inputs
     newStatus.value = ''
     newPaymentStatus.value = ''
     note.value = ''
     force.value = false
+    
+    console.log('[OrderDetail] === Status update complete ===');
   } catch (e) {
-    console.error('[orderDetail] submitStatus error', e)
+    console.error('[OrderDetail] === Status update failed ===');
+    console.error('[OrderDetail] Error:', e);
+    console.error('[OrderDetail] Error message:', e.message);
     alert('Failed to update status: ' + (e.message || e))
   }
 }
 
 async function reloadOrder() {
+  console.log('[OrderDetail] Reloading order...');
   await loadOrder()
+}
+
+function goToHistory() {
+  console.log('[OrderDetail] Navigating to order history:', id);
+  try {
+    router.push({ name: 'OrderHistory', params: { id: String(id) } })
+  } catch (e) {
+    console.error('[OrderDetail] Navigation error:', e);
+  }
+}
+
+async function deleteOrder() {
+  console.log('[OrderDetail] === Attempting to delete order ===');
+  console.log('[OrderDetail] Timestamp:', new Date().toISOString());
+  console.log('[OrderDetail] Order ID:', id);
+  
+  if (!confirm('Are you sure you want to delete this order? This action cannot be undone.')) {
+    console.log('[OrderDetail] Delete cancelled by user');
+    return;
+  }
+  
+  try {
+    console.log('[OrderDetail] Calling API DELETE /server/orders/:id');
+    const response = await fetch(`/api/server/orders/${id}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    console.log('[OrderDetail] Delete response status:', response.status);
+    
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      console.error('[OrderDetail] Delete failed:', error);
+      throw new Error(error.error || `Delete failed with status ${response.status}`);
+    }
+    
+    const result = await response.json();
+    console.log('[OrderDetail] ✓ Order deleted successfully:', result);
+    
+    alert('Order deleted successfully');
+    console.log('[OrderDetail] Navigating to dashboard...');
+    router.push({ name: 'Dashboard' });
+    console.log('[OrderDetail] === Delete complete ===');
+  } catch (e) {
+    console.error('[OrderDetail] === Delete failed ===');
+    console.error('[OrderDetail] Error:', e);
+    console.error('[OrderDetail] Error message:', e.message);
+    alert('Failed to delete order: ' + (e.message || e));
+  }
 }
 </script>
