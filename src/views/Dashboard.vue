@@ -4,6 +4,7 @@
       <h2 class="text-xl font-bold">Dashboard</h2>
       <div class="space-x-2">
         <button @click="viewMode = 'create'" class="px-3 py-2 bg-blue-500 text-white rounded">Make New Order</button>
+        <button @click="goToOrderStatusHistory" class="px-3 py-2 bg-indigo-600 text-white rounded">Order Status History</button>
         <button @click="viewMode = 'list'" class="px-3 py-2 bg-gray-700 text-white rounded">Show Orders</button>
         <button @click="viewMode = 'createModel'" class="px-3 py-2 bg-green-600 text-white rounded">Create Model</button>
         <button @click="viewMode = 'manageModels'" class="px-3 py-2 bg-purple-600 text-white rounded">Manage Models</button>
@@ -332,10 +333,7 @@
                     <div v-else>-</div>
                   </td>
                   <td class="p-2 border">
-                    <div class="flex flex-col space-y-1">
-                      <button @click="goToDetail(o.id || o.orders_id)" class="px-2 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600">View</button>
-                      <button @click="goToHistory(o.id || o.orders_id)" class="px-2 py-1 bg-indigo-500 text-white rounded text-sm hover:bg-indigo-600">History</button>
-                    </div>
+                    <button @click="goToDetail(o.id || o.orders_id)" class="px-2 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600">View</button>
                   </td>
             </tr>
           </tbody>
@@ -780,6 +778,16 @@ export default {
       console.error('[goToHistory] router.push failed', e);
     } 
   }
+  
+  function goToOrderStatusHistory() {
+    console.log('[goToOrderStatusHistory] Navigating to centralized order status history dashboard');
+    try {
+      router.push({ name: 'OrderStatusHistory' })
+    } catch (e) {
+      console.error('[goToOrderStatusHistory] router.push failed', e);
+    }
+  }
+  
     function trackOrder(id) { alert('Track order ' + id) }
 
     async function getPublicPreview(path) {
@@ -1248,6 +1256,7 @@ export default {
       isAdmin,
       goToDetail,
       goToHistory,
+      goToOrderStatusHistory,
       trackOrder,
       handleCreate,
       createOrder: handleCreate,

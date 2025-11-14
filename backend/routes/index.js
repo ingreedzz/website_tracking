@@ -769,6 +769,31 @@ router.get('/order_addresses', verifyToken, async (req, res) => {
   }
 })
 
+// Endpoint to fetch ALL order status history (centralized dashboard)
+router.get('/order-status-history', verifyToken, async (req, res) => {
+  const requestId = req.id || 'unknown';
+  console.log(`[REQ:${requestId}] [ORDER-STATUS-HISTORY] === Fetching all order status history ===`);
+  
+  try {
+    const { data: historyRows, error: historyErr } = await supabase
+      .from('order_status_history')
+      .select('order_status_history_id, order_id, old_status, new_status, changed_by, changed_by_id, changed_by_email, changed_by_name, note, customer_name, product, order_name, payment_status, created_at')
+      .order('created_at', { ascending: false })
+      .limit(500); // Limit to most recent 500 records for performance
+
+    if (historyErr) {
+      console.error(`[REQ:${requestId}] [ORDER-STATUS-HISTORY] Failed to fetch history:`, historyErr.message);
+      return res.status(500).json({ error: 'Failed to fetch order status history' });
+    }
+
+    console.log(`[REQ:${requestId}] [ORDER-STATUS-HISTORY] Retrieved ${historyRows?.length || 0} history records`);
+    res.json(Array.isArray(historyRows) ? historyRows : []);
+  } catch (err) {
+    console.error(`[REQ:${requestId}] [ORDER-STATUS-HISTORY] Exception:`, err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/payments', verifyToken, async (req, res) => {
   console.log('[GET /payments] === Fetching payments ===');
   console.log('[GET /payments] Timestamp:', new Date().toISOString());

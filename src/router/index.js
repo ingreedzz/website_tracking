@@ -6,6 +6,7 @@ import Dashboard from '../views/Dashboard.vue'
 import Login from '../views/Login.vue'
 import OrderDetail from '../views/OrderDetail.vue'
 import OrderHistory from '../views/OrderHistory.vue'
+import OrderStatusHistory from '../views/OrderStatusHistory.vue'
 import Payment from '../views/Payment.vue'
 
 const routes = [
@@ -15,7 +16,8 @@ const routes = [
   { path: '/payment', name: 'Payment', component: Payment },
   { path: '/login', name: 'Login', component: Login },
   { path: '/orders/:id', name: 'OrderDetail', component: OrderDetail, props: true },
-  { path: '/orders/:id/history', name: 'OrderHistory', component: OrderHistory, props: true }
+  { path: '/orders/:id/history', name: 'OrderHistory', component: OrderHistory, props: true },
+  { path: '/order-status-history', name: 'OrderStatusHistory', component: OrderStatusHistory }
 ]
 
 const router = createRouter({

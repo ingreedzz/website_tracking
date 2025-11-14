@@ -32,9 +32,8 @@
             <a :href="order.payment_proof_url || order.payment_proof_path" target="_blank" class="text-blue-600 underline">Open proof image</a>
           </div>
         </div>
-        <div class="mt-4 flex space-x-3">
+        <div class="mt-4">
           <router-link class="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300" to="/dashboard">Back to Dashboard</router-link>
-          <button @click="goToHistory" class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">View Order History</button>
         </div>
 
         <!-- Status update form (available to any authenticated user) -->
@@ -254,15 +253,6 @@ async function submitStatus() {
 async function reloadOrder() {
   console.log('[OrderDetail] Reloading order...');
   await loadOrder()
-}
-
-function goToHistory() {
-  console.log('[OrderDetail] Navigating to order history:', id);
-  try {
-    router.push({ name: 'OrderHistory', params: { id: String(id) } })
-  } catch (e) {
-    console.error('[OrderDetail] Navigation error:', e);
-  }
 }
 
 async function deleteOrder() {
