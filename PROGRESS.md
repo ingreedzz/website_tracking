@@ -1,5 +1,20 @@
 ### November 14, 2025 - Update Order Status Feature Implementation (Minimal Changes)
 
+### November 14, 2025 - Follow-up: Extended History & Smoke Test Results
+
+**Summary:** Small follow-up after the main status-update work — fixed a duplicate-constant compile error, implemented an extended order status history insert (with graceful fallback when DB columns are absent), added frontend status-update UI, and ran end-to-end smoke tests validating the full flow.
+
+- Fixed duplicate `ALLOWED_TRANSITIONS` declaration that caused a redeclare error.
+- Replaced in-handler payment status array with top-level `PAYMENT_STATUSES` Set for centralized validation.
+- Backend: `PUT /api/server/orders/:id/status` now attempts an extended insert into `order_status_history` including `changed_by_id`, `changed_by_email`, `changed_by_name`, `customer_name`, `product`, `order_name`, and `payment_status`. If the DB schema lacks those columns the handler falls back to inserting the minimal history record (old_status/new_status/changed_by/note).
+- Frontend: `src/views/OrderDetail.vue` — added a small status-update UI (status select, optional `payment_status`, note, and `force` flag) and `submitStatus()` which calls the PUT status endpoint with `expected_current_status` for optimistic concurrency.
+- Tests: Created and executed `tmp/order_status_smoketest.js` which (1) registers and logs in a test user, (2) inserts an order via Supabase REST, and (3) calls the PUT status endpoint with the user's JWT. The smoke test completed successfully: status update returned 200 and an `order_status_history` record was created.
+
+**Next actions (optional):**
+- If you want the extended history fields persisted permanently, run a DB migration to add the columns: `changed_by_id`, `changed_by_email`, `changed_by_name`, `customer_name`, `product`, `order_name`, `payment_status` to `order_status_history` (I can prepare the migration SQL).
+- Otherwise we can commit the current code + PROGRESS.md entry and push.
+
+
 **Objective: Implement secure, auditable order status update flow per CODING_AGENT_PROMPT_update_order_status.md**
 
 This update enhances the existing `PUT /server/orders/:id/status` endpoint with validation, optimistic concurrency control, and comprehensive audit logging. All changes are minimal and surgical, preserving existing functionality.

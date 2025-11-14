@@ -1629,26 +1629,80 @@ router.put('/server/orders/:id/status', verifyToken, async (req, res) => {
     }
     console.log(`[REQ:${requestId}] [ORDER-STATUS] Order updated successfully`);
 
-    // Insert status history
-    const histObj = {
-      order_id: orderId,
-      old_status: oldStatus,
-      new_status: status,
-      changed_by: userId,
-      note: note || null
-    };
-    
-    console.log(`[REQ:${requestId}] [ORDER-STATUS] Inserting history record`, histObj);
-    const { data: histIns, error: histErr } = await supabase
-      .from('order_status_history')
-      .insert([histObj])
-      .select()
-      .maybeSingle();
-      
-    if (histErr) {
-      console.warn(`[REQ:${requestId}] [ORDER-STATUS] Failed to insert history`, histErr);
-    } else {
-      console.log(`[REQ:${requestId}] [ORDER-STATUS] History record inserted`, { historyId: histIns?.order_status_history_id });
+    // Insert status history. We attempt to store richer context:
+    // - changed_by as human-readable (email preferred) and include changed_by_id
+    // - include customer_name, product (from first order_item), order_name, and payment_status
+    // Try inserting extended record; if the table doesn't have those columns, fall back.
+    let histIns = null;
+    try {
+      // fetch full order with items to capture product snapshot
+      const { data: fullOrder, error: fullOrderErr } = await supabase
+        .from('orders')
+        .select('*,order_items(*)')
+        .eq('orders_id', orderId)
+        .maybeSingle();
+
+      if (fullOrderErr) {
+        console.warn(`[REQ:${requestId}] [ORDER-STATUS] Warning: failed to fetch full order for history context`, fullOrderErr.message || fullOrderErr)
+      }
+
+      // fetch user info for human-readable changer
+      let changer = { users_id: userId, email: null, name: null };
+      try {
+        const { data: udata } = await supabase.from('users').select('users_id,email,name').eq('users_id', userId).maybeSingle();
+        if (udata) changer = { users_id: udata.users_id, email: udata.email || null, name: udata.name || null };
+      } catch (uErr) {
+        console.warn(`[REQ:${requestId}] [ORDER-STATUS] Warning: failed to fetch user info for history context`, uErr.message || uErr)
+      }
+
+      const product = (fullOrder && Array.isArray(fullOrder.order_items) && fullOrder.order_items[0] && fullOrder.order_items[0].product_snapshot && fullOrder.order_items[0].product_snapshot.product) ? fullOrder.order_items[0].product_snapshot.product : null;
+      const customerName = (fullOrder && fullOrder.customer_name) || null;
+      const orderName = (fullOrder && fullOrder.order_name) || null;
+      const paymentStatusForHist = (fullOrder && fullOrder.payment_status) || (payment_status || null);
+
+      const histObjExtended = {
+        order_id: orderId,
+        old_status: oldStatus,
+        new_status: status,
+        changed_by: changer.email || changer.name || userId,
+        changed_by_id: changer.users_id,
+        changed_by_email: changer.email || null,
+        changed_by_name: changer.name || null,
+        note: note || null,
+        customer_name: customerName,
+        product: product,
+        order_name: orderName,
+        payment_status: paymentStatusForHist
+      };
+
+      console.log(`[REQ:${requestId}] [ORDER-STATUS] Inserting extended history record`, histObjExtended);
+      const r = await supabase.from('order_status_history').insert([histObjExtended]).select().maybeSingle();
+      histIns = r.data;
+      if (r.error) {
+        // If error due to missing columns, attempt fallback
+        const msg = r.error.message || '';
+        console.warn(`[REQ:${requestId}] [ORDER-STATUS] Extended insert failed: ${msg}`);
+        // fallback to minimal history object
+        const histObj = {
+          order_id: orderId,
+          old_status: oldStatus,
+          new_status: status,
+          changed_by: changer.email || changer.name || userId,
+          note: note || null
+        };
+        console.log(`[REQ:${requestId}] [ORDER-STATUS] Inserting fallback history record`, histObj);
+        const r2 = await supabase.from('order_status_history').insert([histObj]).select().maybeSingle();
+        histIns = r2.data;
+        if (r2.error) {
+          console.warn(`[REQ:${requestId}] [ORDER-STATUS] Fallback history insert also failed`, r2.error);
+        } else {
+          console.log(`[REQ:${requestId}] [ORDER-STATUS] Fallback history record inserted`, { historyId: histIns?.order_status_history_id });
+        }
+      } else {
+        console.log(`[REQ:${requestId}] [ORDER-STATUS] Extended history record inserted`, { historyId: histIns?.order_status_history_id });
+      }
+    } catch (histCatchErr) {
+      console.warn(`[REQ:${requestId}] [ORDER-STATUS] Exception while inserting history`, histCatchErr.message || histCatchErr);
     }
 
     // If payment_status was provided, try to update payments rows
