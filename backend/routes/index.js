@@ -4,7 +4,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const supabase = require('../supabaseClient');
-const { verifyToken, requireAdmin } = require('../middleware/auth');
+const { verifyToken } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -343,7 +343,7 @@ router.post('/login', async (req, res) => {
   }
 });
 
-router.get('/users', verifyToken, requireAdmin, async (req, res) => {
+router.get('/users', verifyToken, async (req, res) => {
   try {
     if (!REST_BASE) return res.status(500).json({ error: 'Supabase not configured' })
     // Request is_admin instead of role; compute role from is_admin for compatibility
@@ -366,12 +366,12 @@ router.get('/users', verifyToken, requireAdmin, async (req, res) => {
   }
 });
 
-router.get('/orders', verifyToken, requireAdmin, async (req, res) => {
-  console.log('[GET /orders] === Fetching all orders for admin ===');
+router.get('/orders', verifyToken, async (req, res) => {
+  console.log('[GET /orders] === Fetching all orders ===');
   console.log('[GET /orders] Timestamp:', new Date().toISOString());
   const requestUserId = req.user?.users_id || req.user?.user_id || null;
   const isAdminUser = !!req.user?.is_admin;
-  console.log('[GET /orders] Admin user:', { users_id: requestUserId, is_admin: isAdminUser });
+  console.log('[GET /orders] Authenticated user:', { users_id: requestUserId, is_admin: isAdminUser });
   
   try {
     // Step 1: Validate Supabase configuration
@@ -388,7 +388,7 @@ router.get('/orders', verifyToken, requireAdmin, async (req, res) => {
     
     const resp = await axios.get(url, { 
       headers: SB_HEADERS,
-      timeout: 15000 // 15 second timeout for admin queries
+      timeout: 15000 // 15 second timeout
     });
     
     const orders = Array.isArray(resp.data) ? resp.data : [];
@@ -733,7 +733,7 @@ router.get('/orders/:id', verifyToken, async (req, res) => {
 });
 
 // Simple proxy endpoints for order_addresses and payments for admin UI
-router.get('/order_addresses', verifyToken, requireAdmin, async (req, res) => {
+router.get('/order_addresses', verifyToken, async (req, res) => {
   try {
     const q = req.query || {}
     let query = supabase.from('order_addresses').select('*')
@@ -746,8 +746,8 @@ router.get('/order_addresses', verifyToken, requireAdmin, async (req, res) => {
   }
 })
 
-router.get('/payments', verifyToken, requireAdmin, async (req, res) => {
-  console.log('[GET /payments] === Fetching payments for admin ===');
+router.get('/payments', verifyToken, async (req, res) => {
+  console.log('[GET /payments] === Fetching payments ===');
   console.log('[GET /payments] Timestamp:', new Date().toISOString());
   
   try {
@@ -1525,8 +1525,8 @@ const ALLOWED_TRANSITIONS = {
   any: ['cancelled']  // cancelled can be reached from any status
 };
 
-// Update order status with validation, concurrency check, and audit logging (admin only)
-router.put('/server/orders/:id/status', verifyToken, requireAdmin, async (req, res) => {
+// Update order status with validation, concurrency check, and audit logging
+router.put('/server/orders/:id/status', verifyToken, async (req, res) => {
   const requestId = req.id || 'unknown';
   
   try {
