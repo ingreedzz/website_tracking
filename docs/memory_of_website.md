@@ -2549,7 +2549,7 @@ onMounted(() => {
 
 6. **Security Hardening**:
    - Add helmet.js middleware for HTTP security headers.
-   - Validate and sanitize all user inputs (use express-validator or joi).
+   - Validate and sanitize all inputs (use express-validator or joi).
    - Implement CSRF protection for state-changing operations.
    - Review and address CodeQL findings in `SECURITY_SUMMARY.md`.
 
@@ -2561,7 +2561,7 @@ onMounted(() => {
 8. **Documentation Enhancements**:
    - Generate API documentation using Swagger/OpenAPI from route definitions.
    - Add architecture diagrams (component diagram, sequence diagrams for key flows).
-   - Create user/admin guides with screenshots.
+   - Create admin guides with screenshots.
 
 ### How I Can Help Further
 
