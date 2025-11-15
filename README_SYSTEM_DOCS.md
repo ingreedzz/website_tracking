@@ -4,19 +4,23 @@
 
 This repository now contains **SYSTEM_ANALYSIS_DESIGN.md** - a comprehensive 852-line documentation file containing ALL necessary information to create:
 
+**System Type:** Admin-only reporting and tracking tool. Admins create and manage orders on behalf of external customers. There are no customer user accounts in the system.
+
+**Primary Actor:** Admin (sole user role)
+
 ### 📊 Diagrams You Can Create
 
 1. **Use Case Diagram**
-   - 8 documented use cases
-   - 2 actors (Customer, Admin)
+   - 10 documented use cases
+   - 1 primary actor: **Admin** (and System for automated processes)
    - Complete with preconditions and postconditions
    - See Section 4
 
 2. **Use Case Scenarios**
    - Detailed step-by-step scenarios
-   - Registration flow
-   - Order creation flow
-   - Payment upload flow
+   - Admin registration flow
+   - Order creation flow (admin creates orders for customers)
+   - Payment upload flow (admin uploads payment proofs)
    - Admin order processing
    - See Section 4.2
 
@@ -96,23 +100,30 @@ SYSTEM_ANALYSIS_DESIGN.md
 
 ### 🎯 How to Use This Documentation
 
+**System Context:** This application is an **admin-only reporting and tracking tool**. External customers do not have user accounts. Admins create and manage all orders on behalf of customers.
+
 **For Use Case Diagrams:**
 - Read Section 4.1 for actors and use cases
-- Use the permission matrix in Section 2.2
+- Model **Admin** as the only user actor (System is the automated actor)
+- Use the permission matrix in Section 2.2 (admin-only permissions)
 - Reference use case scenarios in Section 4.2
 
 **For Activity Diagrams:**
 - Section 5 provides complete activity flows
+- All activities are performed by Admin users
 - Includes decision points and error paths
 - Two main activities fully documented
 
 **For Sequence Diagrams:**
 - Section 6 contains 3 detailed sequences
-- Lists all participants (User, Browser, Frontend, Backend, Database)
+- Lists all participants (Admin, Browser, Frontend, Backend, Database)
 - Shows all messages and interactions
+- Admin is the primary human actor in all sequences
 
 **For Class Diagrams:**
 - Section 7 documents 7 classes
+- Note that User class represents Admin users only
+- Order.customer_name stores external customer info (not a system user)
 - Includes attributes, methods, and relationships
 - Relationship summary provided
 
@@ -120,6 +131,7 @@ SYSTEM_ANALYSIS_DESIGN.md
 - Section 8.1 for conceptual model
 - Section 8.2 for logical model with all attributes
 - Section 8.3 for cardinality summary
+- Note: user_id in orders references the admin who created the order
 
 **For Database Design:**
 - Section 9 contains complete table specifications
