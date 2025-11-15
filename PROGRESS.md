@@ -1,3 +1,48 @@
+### November 15, 2025 - Use Case Scenarios Documentation Added
+
+**Summary:** Added comprehensive use case scenarios documentation in CSV format for easy import into Google Sheets. This documentation file provides structured information about all admin system use cases including Login, Create Order, View Order, Tracking Status Order, Upload Payment, Manage Models, View Order Status History, and Logout.
+
+**Files Created:**
+- `thesis/use_case_scenarios.csv` - CSV file containing 8 use case scenarios with columns:
+  - Use Case (name)
+  - Actor (Admin)
+  - Brief Description
+  - Entry Condition
+  - Flow Of Event (step-by-step)
+  - Alternative Scenario (error handling)
+  - Exit Condition
+
+**Documentation Details:**
+The CSV file includes complete use case scenarios for:
+1. **Login** - Admin authentication to access Dashboard and admin features
+2. **Create Order** - Admin creates/records orders on behalf of external customers
+3. **View Order** - Admin views order list and details, including address and status changes
+4. **Tracking Status Order** - Admin updates order status through detail page
+5. **Upload Payment** - Admin uploads or records payment proof for existing orders
+6. **Manage Models** - Admin creates, edits, deletes models with dynamic size_fields for order forms
+7. **View Order Status History** - Admin views dashboard of all order status change history for audit purposes
+8. **Logout** - Admin ends session and removes token from client
+
+**Format:**
+- CSV format with proper quoting for multi-line content
+- Preserves Markdown formatting within cells (bold text with asterisks)
+- Compatible with Google Sheets import
+- Contains newline characters (\n) for multi-step flows
+
+**Purpose:**
+- Documentation for thesis/academic purposes
+- Reference material for system use cases
+- Can be downloaded and imported into Google Sheets for easy viewing and sharing
+- No source code changes - documentation only
+
+**Testing Results:**
+- ✅ CSV file created successfully in thesis/ directory
+- ✅ 9 lines total (1 header + 8 data rows)
+- ✅ All 7 columns present and properly formatted
+- ✅ No source code modifications
+
+---
+
 ### November 14, 2025 - Centralized Order Status History Dashboard Implementation
 
 **Summary:** Implemented a centralized order status history dashboard that consolidates all order status changes into a single, easily accessible view. This eliminates the need for individual history buttons per order and provides administrators with a comprehensive overview of all changes across all orders.
