@@ -2,7 +2,9 @@
 
 ## Summary
 
-This document provides a comprehensive memory of the **website_tracking** repository—a full-stack order management and tracking system built with Vue.js (frontend), Node.js/Express (backend), and Supabase (PostgreSQL + Storage). The system enables users to create orders with custom product specifications, upload payment proofs to Supabase Storage, and track order status changes through a detailed audit trail. Admin capabilities include dynamic model management with JSON-defined size fields, centralized order status history dashboards, and comprehensive logging for debugging and compliance. The application uses JWT-based authentication, supports role-based access (admin vs. regular users), and includes extensive error handling and request tracing. Deployment is designed for Vercel (frontend) and Render (backend), with GitHub Actions automating CI/CD workflows and smoke tests.
+**This system is admin-operated only: there is no public customer interface. Admin accounts must be provisioned by the site owner or developer (direct DB insert or backend script).**
+
+This document provides a comprehensive memory of the **website_tracking** repository—a full-stack order management and tracking system built with Vue.js (frontend), Node.js/Express (backend), and Supabase (PostgreSQL + Storage). The system is an admin-only reporting and tracking tool where Admins create and manage orders on behalf of customers. Admins can create orders with custom product specifications, upload payment proofs to Supabase Storage (or record external payments), and track order status changes through a detailed audit trail. Admin capabilities include dynamic model management with JSON-defined size fields, centralized order status history dashboards, and comprehensive logging for debugging and compliance. The application uses JWT-based authentication for admin access, and includes extensive error handling and request tracing. Deployment is designed for Vercel (frontend) and Render (backend), with GitHub Actions automating CI/CD workflows and smoke tests.
 
 ---
 
@@ -10,18 +12,19 @@ This document provides a comprehensive memory of the **website_tracking** reposi
 
 ### 1. **Authentication & Authorization**
 
-The system implements JWT-based authentication with role-based access control:
+The system implements JWT-based authentication for admin-only access:
 
-- **Authentication Flow**: Users register via `POST /api/register` (see `backend/routes/index.js`) which hashes passwords using bcrypt and creates user records in the `users` table. Login via `POST /api/login` validates credentials and issues a JWT token containing `users_id`, `email`, `is_admin`, and optionally `role`.
+- **Admin Account Creation**: Only Admin accounts are valid users of the web UI. New admin accounts must be created directly in the database (by the owner or dev) or via backend scripts (e.g., `backend/scripts/create-admin.js`). The `POST /api/register` endpoint exists for development and testing purposes but is not intended for external users or public registration.
+- **Authentication Flow**: Admin users log in via `POST /api/login` which validates credentials and issues a JWT token containing `users_id`, `email`, `is_admin`, and optionally `role`. Passwords are hashed using bcrypt.
 - **Token Management**: Tokens are stored client-side (localStorage) and included in all authenticated requests via the `Authorization: Bearer <token>` header. The `verifyToken` middleware (backend) validates tokens on protected routes.
 - **Authorization**: Admin privileges are determined by the `is_admin` boolean flag (preferred) or fallback to `role === 'admin'`. Code throughout the backend checks these flags to gate admin-only operations like model management and centralized history access.
-- **Frontend Auth**: The `src/lib/auth.js` module manages token storage, decoding, and provides `getCurrentUser()` and `getToken()` helpers. The Vue router (`src/router/index.js`) includes a global guard that redirects authenticated users away from login/register pages.
+- **Frontend Auth**: The `src/lib/auth.js` module manages token storage, decoding, and provides `getCurrentUser()` and `getToken()` helpers. The Vue router (`src/router/index.js`) includes a global guard that redirects authenticated admin users away from login/register pages.
 
 ### 2. **Database Schema (Supabase PostgreSQL)**
 
 The application uses Supabase as its PostgreSQL provider. Key tables include:
 
-- **`users`**: Stores user profiles with `users_id` (UUID), `email`, `name`, `phone`, `is_admin` boolean. Historically had a `role` column which is being phased out in favor of `is_admin`.
+- **`users`**: Stores admin user profiles with `users_id` (UUID), `email`, `name`, `phone`, `is_admin` boolean. All users in this table are admins who operate the system. Historically had a `role` column which is being phased out in favor of `is_admin`.
 - **`models`**: Defines product models/templates with `models_id`, `name`, `description`, `unit_price` (numeric), and crucially `size_fields` (JSONB)—an array of objects like `[{key, label, type, unit}, ...]` for dynamic form generation. Managed via `backend/routes/index.js` endpoints (`GET/POST/PATCH/DELETE /models`).
 - **`orders`**: Core order records with `orders_id`, `user_id`, `product`, `model`, `size`, `color`, `address`, `phone`, `quantity`, `unit_price`, `total_price`, `payment_status` (pending/completed/failed/refunded), `status` (created/confirmed/printing/shipped/delivered/cancelled), `order_date`, `deadline`, `sablon_path` (image path in Supabase Storage), `sablon_url` (public URL), `customer_name`, `order_name`, `custom` (JSON for dynamic size fields data), and timestamps.
 - **`order_items`**: Line items for orders, with `order_items_id`, `order_id`, `product_snapshot` (JSON), `quantity`, `unit_price`, `size_fields_data` (JSON).
@@ -33,46 +36,46 @@ Database connection is handled via `backend/db.js` (using `postgres` npm package
 ### 3. **Order Creation and Management Flow**
 
 **Order Creation**:
-1. User fills out the order form in `Dashboard.vue`, selecting a model (e.g., "Kaos Oblong Dewasa") which dynamically loads size fields from `models` table (via `GET /api/models`).
-2. User enters product details, quantity, color, address, phone, optionally `customer_name` and `order_name`, and uploads a "sablon" image (design/logo).
+1. Admin fills out the order form in `Dashboard.vue`, selecting a model (e.g., "Kaos Oblong Dewasa") which dynamically loads size fields from `models` table (via `GET /api/models`).
+2. Admin enters product details, quantity, color, address, phone, optionally `customer_name` and `order_name`, and uploads a "sablon" image (design/logo).
 3. On submit, `Dashboard.vue` constructs a `FormData` object and sends `POST /server/orders` (see `backend/routes/index.js`).
 4. **Backend Processing** (`POST /server/orders` in `backend/routes/index.js`):
-   - Validates user authentication and extracts `user_id` from JWT.
+   - Validates admin authentication and extracts `user_id` from JWT.
    - Uses Multer to handle the uploaded sablon image file.
    - Uploads image to Supabase Storage bucket (`sablon-images`) via `supabase.storage.from(bucket).upload()`.
    - Retrieves public URL for the uploaded image.
    - Inserts order record into `orders` table with all fields (product, model, size, custom JSON, sablon paths/URLs, prices, status='created', payment_status='pending').
    - Optionally inserts a row into `order_status_history` to record the initial "created" status.
    - Returns the created order object to frontend.
-5. Frontend receives order, updates local state, and redirects user to `Payment.vue` to upload payment proof.
+5. Admin may then navigate to the Payment view to upload payment proof or create payment records on behalf of customers. The frontend does not automatically redirect; Admin controls workflow from Dashboard.
 
-**Order Listing**: Admins and users can view orders via `GET /api/orders` (returns all orders for admin) or `GET /api/user/orders` (returns user's own orders). `Dashboard.vue` displays orders in a table with sablon image thumbnails fetched from Supabase public URLs.
+**Order Listing**: Admins view orders via `GET /api/orders` (returns all orders for admin). The `GET /api/user/orders` endpoint may remain for backward compatibility but is not used by external users—only admins use this system. `Dashboard.vue` displays orders in a table with sablon image thumbnails fetched from Supabase public URLs.
 
 **Order Detail**: `OrderDetail.vue` fetches a single order via `GET /api/orders/:id`, displays full details including payment proof if uploaded, and provides a form to update order status (see next section).
 
 ### 4. **Payment Upload Flow**
 
 **Payment Proof Upload**:
-1. After order creation, user navigates to `Payment.vue` (or linked from dashboard).
-2. User selects the order (via query param `?order=<orders_id>`) and uploads a payment proof image.
+1. Admin navigates to `Payment.vue` (or accesses it from dashboard) to record payment information for orders.
+2. Admin selects the order (via query param `?order=<orders_id>`) and uploads a payment proof image or records external payment details.
 3. Frontend sends `POST /server/orders/:id/payment` with `FormData` containing the file.
 4. **Backend Processing** (`POST /server/orders/:id/payment` in `backend/routes/index.js`):
-   - Validates order exists and belongs to user (or user is admin).
+   - Validates order exists and checks Admin permission.
    - Uploads file to Supabase Storage (`payment-proofs` bucket).
    - Retrieves public URL.
    - Inserts/updates `payments` table with `proof_path`, `proof_url`, `status='pending'`, `amount`, `method`.
-   - Updates `orders.payment_status` to 'pending' or 'completed' based on business logic.
+   - Updates `orders.payment_status` as appropriate (Admin may also set this manually).
    - Returns payment record and updated order.
 5. Frontend confirms upload and shows success message.
 
 ### 5. **Order Status Updates and Audit Trail**
 
 **Status Update Flow** (from `OrderDetail.vue` or admin dashboard):
-1. User (admin or order owner) selects a new status (e.g., from 'created' to 'confirmed') in the status update form in `OrderDetail.vue`.
-2. Optional: User sets new `payment_status`, adds a `note`, and can check "force" to skip validation.
+1. Admin selects a new status (e.g., from 'created' to 'confirmed') in the status update form in `OrderDetail.vue`.
+2. Optional: Admin sets new `payment_status`, adds a `note`, and can check "force" to skip validation.
 3. Frontend sends `PUT /server/orders/:id/status` with payload: `{ status, payment_status?, note?, expected_current_status?, force? }`.
 4. **Backend Processing** (`PUT /server/orders/:id/status` in `backend/routes/index.js`):
-   - Validates user is authenticated and has permission (order owner or admin).
+   - Validates admin authentication and permission.
    - Fetches current order from DB.
    - **Optimistic Concurrency Control**: If `expected_current_status` is provided and doesn't match current status, rejects update (unless `force=true` and user is admin).
    - Updates `orders.status` and optionally `orders.payment_status`.
@@ -83,8 +86,8 @@ Database connection is handled via `backend/db.js` (using `postgres` npm package
 **Centralized Order Status History Dashboard**:
 - `OrderStatusHistory.vue` displays a centralized view of all status changes across all orders (admin-only feature).
 - Fetches data from `GET /api/order-status-history` which queries `order_status_history` table ordered by `created_at DESC` with optional limit for performance.
-- Displays statistics: total changes, unique orders, unique users, changes today.
-- Includes search/filter by customer name, product, order name, changed by user, and note.
+- Displays statistics: total changes, unique orders, unique users (admins), changes today.
+- Includes search/filter by customer name, product, order name, changed by admin user, and note.
 - Each row shows: timestamp, order name, customer, product, old→new status transition, changed by (name/email), payment status, note, and "View Order" button linking to `OrderDetail.vue`.
 
 ### 6. **Logging and Diagnostics**
@@ -106,13 +109,13 @@ Database connection is handled via `backend/db.js` (using `postgres` npm package
 
 ### 7. **Dynamic Model Management**
 
-**Model CRUD** (admin feature):
-- **Create**: `Dashboard.vue` includes a "Create Model" form where admin defines `name`, `description`, `unit_price`, and adds `size_fields` (key, label, type, unit) one by one. On submit, `POST /api/models` creates the model in DB.
+**Model CRUD** (admin-only feature):
+- **Create**: Admin uses the "Create Model" form in `Dashboard.vue` to define `name`, `description`, `unit_price`, and adds `size_fields` (key, label, type, unit) one by one. On submit, `POST /api/models` creates the model in DB.
 - **List**: `GET /api/models` returns all models with `size_fields` as JSONB array. Frontend converts to `modelOptions` array.
-- **Update**: "Manage Models" UI in `Dashboard.vue` allows selecting a model, editing its fields, and saving via `PATCH /api/models/:id`.
-- **Delete**: Delete button sends `DELETE /api/models/:id`. Backend enforces referential integrity—deletion fails if model is referenced by existing orders (409 Conflict).
+- **Update**: Admin uses "Manage Models" UI in `Dashboard.vue` to select a model, edit its fields, and save via `PATCH /api/models/:id`.
+- **Delete**: Admin uses delete button to send `DELETE /api/models/:id`. Backend enforces referential integrity—deletion fails if model is referenced by existing orders (409 Conflict).
 
-**Dynamic Form Generation**: When creating an order, `Dashboard.vue` uses `getFieldsForModel(modelKey)` to retrieve size fields for selected model and dynamically renders input fields (number/text) with labels and units. User input is stored in `form.custom` object and sent as JSON in order payload.
+**Dynamic Form Generation**: When creating an order, Admin selects a model and `Dashboard.vue` uses `getFieldsForModel(modelKey)` to retrieve size fields for selected model and dynamically renders input fields (number/text) with labels and units. Admin input is stored in `form.custom` object and sent as JSON in order payload.
 
 **Fallback Models**: If backend models table is empty or API fails, frontend falls back to hardcoded `fallbackModelOptions` array with predefined models and size fields for backward compatibility.
 
@@ -136,14 +139,15 @@ Database connection is handled via `backend/db.js` (using `postgres` npm package
   - Smoke tests on PRs and main pushes.
   - Role migration workflows.
   - Other automated checks.
-- Smoke tests in `tmp/` (e.g., `order_status_smoketest.js`) cover register→login→create order→upload payment→update status→verify history.
+- Smoke tests in `tmp/` (e.g., `order_status_smoketest.js`) cover register→login→create order→upload payment→update status→verify history. The register step creates test admin accounts for smoke test purposes and is not indicative of public user registration.
 
 **Database Migrations**: SQL migration files in `backend/database/migrations/` are referenced in `PROGRESS.md` with instructions on when/how to run them (e.g., adding `order_name`, `customer_name` columns, adding `order_status_history` columns for audit context).
 
 ### 9. **Security Considerations**
 
 - **Authentication**: JWT tokens include user ID and admin flag. Tokens are validated on every protected route.
-- **Authorization**: Admin-only operations are gated by `is_admin` checks. Regular users can only access their own orders (except in `/api/orders` which is open to all authenticated users as noted in code).
+- **Authorization**: Admin-only operations are gated by `is_admin` checks. All users of the web UI are admins; there are no regular user access controls for external customers.
+- **Admin Account Creation**: New admin accounts must be created via direct database insertion or backend scripts (e.g., `backend/scripts/create-admin.js`). The `POST /api/register` endpoint exists for development/testing but is not exposed for public registration.
 - **Password Hashing**: Uses bcrypt with cost factor 10.
 - **Secrets Management**: Sensitive keys (JWT_SECRET, SUPABASE_KEY) stored in `.env` (not committed to repo). Code redacts secrets in logs.
 - **SQL Injection**: Uses parameterized queries via `postgres` library.
@@ -699,6 +703,8 @@ router.beforeEach((to, from, next) => {
 
 export default router
 ```
+
+**Note on Registration Route**: The `/register` route and `Register.vue` component exist in the codebase for development and testing purposes. In this admin-only system, new admin accounts are not created via this public-facing registration page. Instead, admin accounts must be provisioned by the site owner or developer through direct database insertion or backend scripts (e.g., `backend/scripts/create-admin.js`).
 
 ### File: src/views/Dashboard.vue
 
@@ -2547,7 +2553,7 @@ onMounted(() => {
 
 6. **Security Hardening**:
    - Add helmet.js middleware for HTTP security headers.
-   - Validate and sanitize all user inputs (use express-validator or joi).
+   - Validate and sanitize all admin inputs (use express-validator or joi).
    - Implement CSRF protection for state-changing operations.
    - Review and address CodeQL findings in `SECURITY_SUMMARY.md`.
 
@@ -2559,7 +2565,7 @@ onMounted(() => {
 8. **Documentation Enhancements**:
    - Generate API documentation using Swagger/OpenAPI from route definitions.
    - Add architecture diagrams (component diagram, sequence diagrams for key flows).
-   - Create user/admin guides with screenshots.
+   - Create admin guides with screenshots.
 
 ### How I Can Help Further
 
