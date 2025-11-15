@@ -51,43 +51,36 @@
 
 ### 2.1 User Roles
 
-#### 2.1.1 Customer (Regular User)
-- **Identifier**: `is_admin = false`
-- **Primary Functions**: 
-  - Place orders
-  - View own orders
-  - Upload payment proofs
-  - Track order status
-  - Create product models
+**This is an admin-only system.** There are no external customer users. Admins create and manage orders on behalf of customers (tracking orders entered by the admin for external clients).
 
-#### 2.1.2 Admin
+#### 2.1.1 Admin
 - **Identifier**: `is_admin = true`
 - **Primary Functions**:
-  - All customer functions
-  - View all orders from all customers
-  - Update order status
-  - Manage models (create, edit, delete)
-  - View order status history
-  - Access admin dashboard
-  - View customer information
+  - Create orders on behalf of customers
+  - Upload payment proofs for orders (or record external payments)
+  - Update order status throughout order lifecycle
+  - Manage product models (create, edit, delete)
+  - View complete order history and status changes
+  - Access admin dashboard for order tracking and reporting
+  - Delete orders as needed
+  - Manage all customer information (entered by admin)
 
 ### 2.2 Permission Matrix
 
-| Feature | Customer | Admin |
-|---------|----------|-------|
-| Register/Login | ✓ | ✓ |
-| Create Order | ✓ | ✓ |
-| View Own Orders | ✓ | ✓ |
-| View All Orders | ✗ | ✓ |
-| Update Order Status | ✗ | ✓ |
-| Delete Orders | ✗ | ✓ |
-| Upload Payment | ✓ | ✓ |
-| View Payment Status | ✓ | ✓ |
-| Create Models | ✓ | ✓ |
-| Edit Models | ✗ | ✓ |
-| Delete Models | ✗ | ✓ |
-| View Order History | ✗ | ✓ |
-| Access Admin Dashboard | ✗ | ✓ |
+| Feature | Admin |
+|---------|-------|
+| Register/Login | ✓ |
+| Create Order | ✓ |
+| View All Orders | ✓ |
+| Update Order Status | ✓ |
+| Delete Orders | ✓ |
+| Upload Payment | ✓ |
+| View Payment Status | ✓ |
+| Create Models | ✓ |
+| Edit Models | ✓ |
+| Delete Models | ✓ |
+| View Order History | ✓ |
+| Access Admin Dashboard | ✓ |
 
 
 ---
@@ -96,8 +89,10 @@
 
 ### 3.1 Complete User Journey
 
-#### 3.1.1 New Customer Registration Flow
-1. User visits homepage
+**Note:** This is an admin-only system. All flows described below are performed by Admin users who create and manage orders on behalf of customers.
+
+#### 3.1.1 Admin Registration Flow
+1. Admin visits homepage
 2. Clicks "Register" or navigates to `/register`
 3. Fills in registration form:
    - Name
@@ -106,25 +101,25 @@
    - Phone (optional)
 4. Submits registration
 5. System validates input
-6. System creates user account (is_admin = false)
+6. System creates admin account (is_admin = true)
 7. System generates JWT token
-8. User is automatically logged in
-9. User is redirected to Dashboard
+8. Admin is automatically logged in
+9. Admin is redirected to Dashboard
 
-#### 3.1.2 Customer Login Flow
-1. User navigates to `/login`
+#### 3.1.2 Admin Login Flow
+1. Admin navigates to `/login`
 2. Enters email and password
 3. System validates credentials
 4. System generates JWT token
 5. Token stored in localStorage
-6. User redirected to Dashboard
+6. Admin redirected to Dashboard
 
-#### 3.1.3 Order Creation Flow (Customer)
-1. User clicks "Make New Order" in Dashboard
+#### 3.1.3 Order Creation Flow (Admin)
+1. Admin clicks "Make New Order" in Dashboard
 2. System loads available models from database
-3. User fills order form:
-   - Customer Name
-   - Order Name
+3. Admin fills order form on behalf of customer:
+   - Customer Name (the external customer's name)
+   - Order Name (descriptive order title)
    - Product selection
    - Model selection (triggers dynamic size fields)
    - Custom size measurements (based on model)
@@ -132,28 +127,27 @@
    - Quantity
    - Unit price (auto-filled if model has price)
    - Upload sablon design image
-   - Delivery address
-   - Phone number
+   - Delivery address (customer's address)
+   - Phone number (customer's phone)
    - Deadline date
    - Notes (optional)
-4. User submits order
+4. Admin submits order
 5. System validates all fields
 6. System uploads sablon image to Supabase Storage
-7. System creates order record in database
+7. System creates order record in database (linked to admin user)
 8. System creates order_items record
 9. System creates order_addresses record
 10. System calculates total price (unit_price × quantity)
 11. Success message displayed
-12. Order appears in user's order list
+12. Order appears in admin's order list
 
 #### 3.1.4 View Orders Flow
-1. User navigates to Dashboard
+1. Admin navigates to Dashboard
 2. System fetches orders:
-   - Regular users: GET `/user/orders` (filtered by user_id)
-   - Admins: GET `/orders` (all orders)
+   - Admin: GET `/orders` (all orders in the system)
 3. System displays orders in table with:
    - Order ID (truncated)
-   - Customer Name
+   - Customer Name (external customer)
    - Order Name
    - Product
    - Model/Size/Color
@@ -165,14 +159,14 @@
    - Actions (View button)
 
 #### 3.1.5 Payment Upload Flow
-1. User navigates to Payment page (`/payment`)
-2. System loads user's orders
-3. User selects order from dropdown
+1. Admin navigates to Payment page (`/payment`)
+2. System loads orders
+3. Admin selects order from dropdown
 4. System displays order details and total
-5. User selects payment method (Bank Transfer)
-6. User uploads payment proof image
-7. User adds payment notes (optional)
-8. User clicks "Upload Payment"
+5. Admin selects payment method (Bank Transfer)
+6. Admin uploads payment proof image (received from customer or recorded)
+7. Admin adds payment notes (optional)
+8. Admin clicks "Upload Payment"
 9. System validates:
    - Order exists
    - Order not already paid
@@ -183,7 +177,7 @@
 12. System updates order payment_status to 'pending'
 13. Success message displayed with proof link
 
-#### 3.1.6 Order Status Update Flow (Admin Only)
+#### 3.1.6 Order Status Update Flow (Admin)
 1. Admin views order detail page
 2. Admin selects new status from dropdown:
    - created
@@ -199,7 +193,7 @@
 7. System checks optimistic concurrency
 8. System updates order status
 9. System creates history record in order_status_history
-10. System logs change with user information
+10. System logs change with admin information
 11. Success message displayed
 
 ---
@@ -209,35 +203,36 @@
 ### 4.1 Use Case Diagram Elements
 
 #### 4.1.1 Actors
-1. **Customer** (Regular User)
-2. **Admin** (Administrator)
-3. **System** (Automated processes)
+1. **Admin** (Administrator - sole user actor)
+2. **System** (Automated processes)
+
+**Note:** This is an admin-only system. Admins create and manage orders on behalf of external customers.
 
 #### 4.1.2 Main Use Cases
 
 ##### UC-001: Register Account
-- **Actor**: Customer
-- **Precondition**: User not registered
-- **Postcondition**: User account created, JWT issued
-- **Main Flow**: Registration form → Validation → Create account → Generate token → Login
+- **Actor**: Admin
+- **Precondition**: Admin not registered
+- **Postcondition**: Admin account created, JWT issued
+- **Main Flow**: Registration form → Validation → Create admin account → Generate token → Login
 
 ##### UC-002: Login
-- **Actor**: Customer, Admin
-- **Precondition**: User has account
-- **Postcondition**: User authenticated, JWT issued
+- **Actor**: Admin
+- **Precondition**: Admin has account
+- **Postcondition**: Admin authenticated, JWT issued
 - **Main Flow**: Enter credentials → Validate → Generate token → Redirect to dashboard
 
 ##### UC-003: Create Order
-- **Actor**: Customer, Admin
-- **Precondition**: User authenticated
-- **Postcondition**: Order created in database
-- **Main Flow**: Fill form → Upload image → Validate → Create order → Display confirmation
+- **Actor**: Admin
+- **Precondition**: Admin authenticated
+- **Postcondition**: Order created in database on behalf of customer
+- **Main Flow**: Fill form with customer details → Upload sablon image → Validate → Create order → Display confirmation
 
 ##### UC-004: View Orders
-- **Actor**: Customer (own orders), Admin (all orders)
-- **Precondition**: User authenticated
-- **Postcondition**: Orders displayed
-- **Main Flow**: Navigate to dashboard → Fetch orders → Display list
+- **Actor**: Admin
+- **Precondition**: Admin authenticated
+- **Postcondition**: All orders displayed
+- **Main Flow**: Navigate to dashboard → Fetch all orders → Display list
 
 ##### UC-005: Update Order Status
 - **Actor**: Admin
@@ -246,22 +241,34 @@
 - **Main Flow**: Select new status → Validate transition → Update order → Create history record
 
 ##### UC-006: Upload Payment Proof
-- **Actor**: Customer, Admin
-- **Precondition**: Order exists, not paid
+- **Actor**: Admin
+- **Precondition**: Admin authenticated, order exists, not paid
 - **Postcondition**: Payment proof uploaded, status updated
-- **Main Flow**: Select order → Upload image → Create payment record → Update order status
+- **Main Flow**: Select order → Upload payment image → Create payment record → Update order status
 
 ##### UC-007: Create Model
-- **Actor**: Customer, Admin
-- **Precondition**: User authenticated
+- **Actor**: Admin
+- **Precondition**: Admin authenticated
 - **Postcondition**: Model created in database
 - **Main Flow**: Fill model form → Add size fields → Validate → Create model → Refresh dropdown
 
 ##### UC-008: View Order Status History
 - **Actor**: Admin
 - **Precondition**: Admin authenticated
-- **Postcondition**: Complete status change history displayed
+- **Postcondition**: Complete status change history displayed for all orders
 - **Main Flow**: Navigate to history page → Fetch records → Display with statistics
+
+##### UC-009: Validate Order Size
+- **Actor**: System
+- **Precondition**: Order submission with dynamic size fields
+- **Postcondition**: Size data validated against model
+- **Main Flow**: Validate size fields → Check required fields → Return validation result
+
+##### UC-010: Delete Order
+- **Actor**: Admin
+- **Precondition**: Admin authenticated, order exists
+- **Postcondition**: Order deleted from system
+- **Main Flow**: Select order → Confirm deletion → Delete order and related records
 
 
 ---
@@ -270,12 +277,12 @@
 
 ### 5.1 Order Creation Activity
 
-**Start**: User clicks "Make New Order"  
+**Start**: Admin clicks "Make New Order"  
 **End**: Order successfully created or error displayed
 
 **Main Activities**:
 1. Initialize Form → Load models from database
-2. User Input (Parallel) → Fill all order fields
+2. Admin Input (Parallel) → Fill all order fields (customer details, product specs)
 3. Validation Decision → Check required fields
 4. File Upload → Upload sablon image to storage
 5. Calculate Price → unit_price × quantity
@@ -289,14 +296,14 @@
 
 ### 5.2 Payment Upload Activity
 
-**Start**: User navigates to Payment page  
+**Start**: Admin navigates to Payment page  
 **End**: Payment proof uploaded or error displayed
 
 **Main Activities**:
-1. Load Orders → Fetch user's orders
-2. Select Order → User chooses from dropdown
+1. Load Orders → Fetch orders
+2. Select Order → Admin chooses from dropdown
 3. Eligibility Check → Validate payment allowed
-4. Upload Proof → Select and upload image file
+4. Upload Proof → Select and upload payment image file
 5. Validation → Check file type and size
 6. Upload Process → Upload to storage, get URL
 7. Database Update → Create payment record, update order
@@ -306,32 +313,32 @@
 
 ## 6. Sequence Diagrams Information
 
-### 6.1 User Registration Sequence
+### 6.1 Admin Registration Sequence
 
-**Participants**: User, Browser, Frontend (Vue), Backend (Express), Database (Supabase)
+**Participants**: Admin, Browser, Frontend (Vue), Backend (Express), Database (Supabase)
 
 **Key Interactions**:
-1. User → Browser: Fill registration form
+1. Admin → Browser: Fill registration form
 2. Frontend → Backend: POST /api/register
 3. Backend → Backend: Hash password (bcrypt)
 4. Backend → Database: Check email exists
-5. Backend → Database: INSERT new user
+5. Backend → Database: INSERT new admin user
 6. Backend → Backend: Generate JWT token
 7. Backend → Frontend: Return {user, token}
 8. Frontend → Browser: Store token, redirect to dashboard
 
 ### 6.2 Order Creation Sequence
 
-**Participants**: User, Browser, Frontend, Backend, Supabase Storage, Database
+**Participants**: Admin, Browser, Frontend, Backend, Supabase Storage, Database
 
 **Key Interactions**:
 1. Frontend → Backend: GET /api/models
 2. Backend → Database: SELECT * FROM models
-3. User → Frontend: Fill order form, upload image
+3. Admin → Frontend: Fill order form with customer details, upload sablon image
 4. Frontend → Backend: POST /api/server/orders (multipart/form-data)
 5. Backend → Supabase Storage: Upload sablon image
 6. Backend → Database: BEGIN TRANSACTION
-7. Backend → Database: INSERT INTO orders
+7. Backend → Database: INSERT INTO orders (with admin user_id)
 8. Backend → Database: INSERT INTO order_items
 9. Backend → Database: INSERT INTO order_addresses
 10. Backend → Database: COMMIT TRANSACTION
@@ -361,13 +368,15 @@
 ### 7.1 Main Classes
 
 #### Class: User
+**Note:** In this admin-only system, all users are administrators.
+
 **Attributes**:
 - users_id: UUID (PK)
 - email: String (unique)
 - password: String (hashed)
 - name: String
 - phone: String
-- is_admin: Boolean
+- is_admin: Boolean (always true for system users)
 - created_at: Timestamp
 
 **Methods**:
@@ -376,17 +385,19 @@
 - logout(): void
 
 **Relationships**:
-- Has many Orders (1:N)
+- Has many Orders (1:N) - Admin creates orders on behalf of customers
 - Changes OrderStatusHistory (1:N)
 
 #### Class: Order
+**Note:** Orders represent orders created by admin for external customers. The customer_name field stores the external customer's information.
+
 **Attributes**:
 - orders_id: UUID (PK)
-- user_id: UUID (FK)
+- user_id: UUID (FK) - References admin who created the order
 - status: String
 - total: Numeric
 - payment_status: String
-- customer_name: String
+- customer_name: String - External customer name
 - order_name: String
 - deadline: Date
 
@@ -397,7 +408,7 @@
 - updateStatus(): Boolean
 
 **Relationships**:
-- Belongs to User (N:1)
+- Belongs to User (N:1) - Admin who created it
 - Has many OrderItems (1:N)
 - Has many Payments (1:N)
 - Has many OrderStatusHistory (1:N)
@@ -789,42 +800,45 @@
 
 ### 10.4 User Access Rules
 
-1. **Customer Access**:
-   - Can only view/edit own orders
-   - Cannot view other customers' orders
-   - Cannot access admin endpoints
+**Admin Access** (Only User Role):
+- Can view all orders in the system
+- Can create orders on behalf of any customer
+- Can update any order status
+- Can delete any order
+- Can manage models (create, edit, delete)
+- Can upload payment proofs for any order
+- Can view complete order status history
+- Full access to all system features
 
-2. **Admin Access**:
-   - Can view all orders from all customers
-   - Can update any order status
-   - Can delete any order
-   - Can manage models (edit/delete)
+**Note:** This is an admin-only system. There are no customer user accounts. Admins create and manage all orders for external customers (tracking/reporting purposes). The `customer_name` field in orders stores information about the external customer, but customers do not have direct system access.
 
 ---
 
 ## 11. API Endpoints Summary
 
+**Note:** This is an admin-only system. All endpoints are used by administrators to manage orders on behalf of external customers. Endpoints that appear to support user-specific access (e.g., GET /api/user/orders) are retained for backward compatibility but are effectively admin-operated.
+
 ### Authentication
-- `POST /api/register` - Register new user account
-- `POST /api/login` - Login and get JWT token
+- `POST /api/register` - Register new admin account
+- `POST /api/login` - Admin login and get JWT token
 
 ### Orders
-- `GET /api/user/orders` - Get orders for current user
-- `GET /api/orders` - Get all orders (admin)
-- `GET /api/orders/:id` - Get order details
-- `POST /api/server/orders` - Create new order
-- `PUT /api/server/orders/:id/status` - Update order status
+- `GET /api/user/orders` - Get orders (admin convenience endpoint, retained for compatibility)
+- `GET /api/orders` - Get all orders in system (admin)
+- `GET /api/orders/:id` - Get order details (admin)
+- `POST /api/server/orders` - Create new order on behalf of customer (admin)
+- `PUT /api/server/orders/:id/status` - Update order status (admin)
 - `DELETE /api/orders/:id` - Delete order (admin)
 
 ### Payments
-- `POST /api/server/orders/:id/payment` - Upload payment proof
-- `GET /api/payments` - Get payment records
+- `POST /api/server/orders/:id/payment` - Upload payment proof for order (admin)
+- `GET /api/payments` - Get payment records (admin)
 
 ### Models
-- `GET /api/models` - Get all models with size fields
-- `POST /api/models` - Create new model
-- `PATCH /api/models/:id` - Update model
-- `DELETE /api/models/:id` - Delete model
+- `GET /api/models` - Get all models with size fields (admin)
+- `POST /api/models` - Create new model (admin)
+- `PATCH /api/models/:id` - Update model (admin)
+- `DELETE /api/models/:id` - Delete model (admin)
 
 ### History
 - `GET /api/order-status-history` - Get all order status changes (admin)
