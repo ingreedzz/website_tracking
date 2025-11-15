@@ -130,7 +130,18 @@ SELECT 'order_items.delivered_date' AS column, COUNT(*) AS non_null_count FROM p
 
 -- Section: quick JSONB checks (size of product_snapshot / size_fields)
 SELECT 'JSONB_SIZES' AS section;
-SELECT 'avg product_snapshot jsonb length' AS metric, AVG(JSONB_ARRAY_LENGTH(ARRAY[product_snapshot]::jsonb[])) FROM public.order_items LIMIT 1;
+-- Safely compute average length when product_snapshot is a JSON array;
+-- if it's an object or null, count as 1 (or ignore nulls).
+SELECT 'avg product_snapshot jsonb length' AS metric,
+	AVG(
+		CASE
+			WHEN product_snapshot IS NULL THEN NULL
+			WHEN jsonb_typeof(product_snapshot) = 'array' THEN jsonb_array_length(product_snapshot)::numeric
+			ELSE 1
+		END
+	)
+FROM public.order_items
+LIMIT 1;
 -- Note: JSONB sizing is application dependent, keep in mind product_snapshot is probably used heavily.
 
 -- End of diagnostic script

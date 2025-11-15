@@ -32,6 +32,15 @@
             <a :href="order.payment_proof_url || order.payment_proof_path" target="_blank" class="text-blue-600 underline">Open proof image</a>
           </div>
         </div>
+        <div v-if="order.addresses && order.addresses.length" class="mb-3">
+          <strong>Address</strong>
+          <div class="mt-2 space-y-2">
+            <div v-for="addr in order.addresses" :key="addr.order_address_id" class="text-sm">
+              <div>{{ addr.address || '-' }}</div>
+              <div v-if="addr.phone" class="text-gray-600">Phone: {{ addr.phone }}</div>
+            </div>
+          </div>
+        </div>
         <div class="mt-4">
           <router-link class="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300" to="/dashboard">Back to Dashboard</router-link>
         </div>

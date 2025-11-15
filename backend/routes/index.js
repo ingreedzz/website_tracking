@@ -724,6 +724,22 @@ router.get('/orders/:id', verifyToken, async (req, res) => {
       payment_proof_url: paymentProofUrl,
       custom: firstItem?.customization || {}
     };
+    // Fetch order addresses (if any) and attach to normalized response
+    try {
+      const { data: addrRows, error: addrErr } = await supabase
+        .from('order_addresses')
+        .select('*')
+        .eq('order_id', id);
+      if (addrErr) {
+        console.warn('[GET /orders/:id] ⚠️ Failed to fetch order_addresses:', addrErr.message || addrErr);
+        normalized.addresses = [];
+      } else {
+        normalized.addresses = Array.isArray(addrRows) ? addrRows : [];
+      }
+    } catch (addrCatch) {
+      console.warn('[GET /orders/:id] Exception fetching order_addresses:', addrCatch && addrCatch.message ? addrCatch.message : addrCatch);
+      normalized.addresses = [];
+    }
     
     // Fetch history and attach it to the normalized order
     try {
